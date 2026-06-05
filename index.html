@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Зависимые поля Bitrix24</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="panel" aria-labelledby="app-title">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">CRM-приложение</p>
+            <h1 id="app-title">Данные объекта</h1>
+          </div>
+          <span class="status" id="connection-status">Демо-режим</span>
+        </div>
+
+        <form id="dependent-fields-form" class="field-grid">
+          <label class="field deal-field" id="deal-id-wrapper">
+            <span>ID сделки</span>
+            <div class="inline-control">
+              <input id="deal-id-field" name="dealId" type="number" inputmode="numeric" placeholder="Например 721653">
+              <button type="button" class="button secondary" id="load-deal-button">Загрузить</button>
+            </div>
+          </label>
+
+          <label class="field">
+            <span>Поиск клиента</span>
+            <div class="inline-control">
+              <input id="client-search-field" name="clientSearch" type="search" placeholder="Название компании">
+              <button type="button" class="button secondary" id="search-client-button">Найти</button>
+            </div>
+          </label>
+
+          <label class="field">
+            <span>Клиент</span>
+            <select id="client-field" name="client" required>
+              <option value="">Найдите или загрузите клиента</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Адрес объекта инфо</span>
+            <select id="address-field" name="address" required disabled>
+              <option value="">Сначала выберите клиента</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Город</span>
+            <input id="city-field" name="city" type="text" readonly placeholder="Заполнится после выбора адреса">
+          </label>
+
+          <label class="field">
+            <span>Наименование ИП инфо</span>
+            <input id="ip-name-field" name="ipName" type="text" readonly placeholder="Заполнится после выбора адреса">
+          </label>
+
+          <label class="field">
+            <span>Ответственное лицо ИП инфо</span>
+            <input id="ip-responsible-field" name="ipResponsible" type="text" readonly placeholder="Заполнится после выбора адреса">
+          </label>
+
+          <div class="actions">
+            <button type="button" class="button secondary" id="reset-button">Очистить</button>
+            <button type="submit" class="button primary" id="save-button">Сохранить в сделку</button>
+          </div>
+        </form>
+
+        <div class="result" id="result-panel" hidden>
+          <div class="result-header">
+            <strong>Результат</strong>
+            <button type="button" class="link-button" id="close-result-button">Закрыть</button>
+          </div>
+          <pre id="result-output"></pre>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
