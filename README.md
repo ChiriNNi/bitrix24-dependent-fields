@@ -60,8 +60,9 @@ http://localhost:4176/?dealId=721361
 Для локального приложения укажите:
 
 ```text
-URL приложения: https://bitrix24-dependent-fields.vercel.app/
-URL установки: https://bitrix24-dependent-fields.vercel.app/install.html
+Тип приложения: Серверное
+URL приложения: https://bitrix24-dependent-fields.vercel.app/api/app
+URL установки: https://bitrix24-dependent-fields.vercel.app/api/install
 ```
 
 После установки `install.html`:

@@ -103,11 +103,7 @@ async function initBitrixContext() {
 
     await new Promise((resolve) => BX24.init(resolve));
     const placementInfo = BX24.placement.info();
-    state.dealId =
-      placementInfo?.options?.ID ||
-      placementInfo?.options?.ENTITY_VALUE_ID ||
-      placementInfo?.options?.ENTITY_DATA?.entityId ||
-      null;
+    state.dealId = getDealIdFromPlacement(placementInfo);
     elements.status.textContent = state.dealId ? `Сделка #${state.dealId}` : "Bitrix24";
   } catch (error) {
     elements.status.textContent = "Ошибка Bitrix24";
@@ -118,7 +114,24 @@ async function initBitrixContext() {
 
 function isBitrixPlacement() {
   const params = new URLSearchParams(window.location.search);
-  return params.has("DOMAIN") || params.has("PLACEMENT") || params.has("APP_SID");
+  return (
+    params.has("DOMAIN") ||
+    params.has("PLACEMENT") ||
+    params.has("APP_SID") ||
+    Boolean(window.BITRIX_PLACEMENT_OPTIONS)
+  );
+}
+
+function getDealIdFromPlacement(placementInfo) {
+  return (
+    placementInfo?.options?.ID ||
+    placementInfo?.options?.ENTITY_VALUE_ID ||
+    placementInfo?.options?.ENTITY_DATA?.entityId ||
+    window.BITRIX_PLACEMENT_OPTIONS?.ID ||
+    window.BITRIX_PLACEMENT_OPTIONS?.ENTITY_VALUE_ID ||
+    window.BITRIX_PLACEMENT_OPTIONS?.ENTITY_DATA?.entityId ||
+    null
+  );
 }
 
 function loadBitrixSdk() {
