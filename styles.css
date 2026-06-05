@@ -40,6 +40,10 @@ body {
   padding: 22px;
 }
 
+.install-panel {
+  width: min(680px, 100%);
+}
+
 .panel-header {
   display: flex;
   align-items: flex-start;

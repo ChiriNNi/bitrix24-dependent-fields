@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Установка приложения</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://api.bitrix24.com/api/v1/"></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="panel install-panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Bitrix24</p>
+            <h1>Установка</h1>
+          </div>
+          <span class="status" id="install-status">Подготовка</span>
+        </div>
+
+        <div class="result">
+          <div class="result-header">
+            <strong>Статус</strong>
+          </div>
+          <pre id="install-output">Регистрируем вкладку в карточке сделки...</pre>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const statusElement = document.querySelector("#install-status");
+      const outputElement = document.querySelector("#install-output");
+
+      function writeStatus(status, text, isError = false) {
+        statusElement.textContent = status;
+        statusElement.classList.toggle("error", isError);
+        outputElement.textContent = text;
+      }
+
+      BX24.init(() => {
+        const handlerUrl = `${window.location.origin}/`;
+
+        BX24.callMethod(
+          "placement.bind",
+          {
+            PLACEMENT: "CRM_DEAL_DETAIL_TAB",
+            HANDLER: handlerUrl,
+            TITLE: "Данные объекта",
+          },
+          (response) => {
+            if (response.error()) {
+              writeStatus("Ошибка", response.error(), true);
+              return;
+            }
+
+            writeStatus("Готово", "Вкладка «Данные объекта» добавлена в карточку сделки.");
+            BX24.installFinish();
+          }
+        );
+      });
+    </script>
+  </body>
+</html>
