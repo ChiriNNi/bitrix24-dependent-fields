@@ -103,7 +103,11 @@ async function initBitrixContext() {
 
     await new Promise((resolve) => BX24.init(resolve));
     const placementInfo = BX24.placement.info();
-    state.dealId = placementInfo?.options?.ID || null;
+    state.dealId =
+      placementInfo?.options?.ID ||
+      placementInfo?.options?.ENTITY_VALUE_ID ||
+      placementInfo?.options?.ENTITY_DATA?.entityId ||
+      null;
     elements.status.textContent = state.dealId ? `Сделка #${state.dealId}` : "Bitrix24";
   } catch (error) {
     elements.status.textContent = "Ошибка Bitrix24";

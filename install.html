@@ -22,7 +22,7 @@
           <div class="result-header">
             <strong>Статус</strong>
           </div>
-          <pre id="install-output">Регистрируем вкладку в карточке сделки...</pre>
+          <pre id="install-output">Регистрируем поле приложения в карточке сделки...</pre>
         </div>
       </section>
     </main>
@@ -30,6 +30,9 @@
     <script>
       const statusElement = document.querySelector("#install-status");
       const outputElement = document.querySelector("#install-output");
+      const FIELD_TYPE_ID = "depfields";
+      const FIELD_NAME = "DEP_WIDGET";
+      const FULL_FIELD_NAME = `UF_CRM_${FIELD_NAME}`;
 
       function writeStatus(status, text, isError = false) {
         statusElement.textContent = status;
@@ -37,27 +40,112 @@
         outputElement.textContent = text;
       }
 
-      BX24.init(() => {
-        const handlerUrl = `${window.location.origin}/`;
+      BX24.init(async () => {
+        try {
+          const handlerUrl = `${window.location.origin}/`;
+          writeStatus("Шаг 1", "Регистрируем пользовательский тип поля...");
 
-        BX24.callMethod(
-          "placement.bind",
-          {
-            PLACEMENT: "CRM_DEAL_DETAIL_TAB",
+          await callBitrix("userfieldtype.add", {
+            USER_TYPE_ID: FIELD_TYPE_ID,
             HANDLER: handlerUrl,
-            TITLE: "Данные объекта",
-          },
-          (response) => {
+            TITLE: "Зависимые поля",
+            DESCRIPTION: "Выбор адреса объекта с зависимыми полями",
+            OPTIONS: { height: 470 },
+          }).catch(async (error) => {
+            if (!String(error.message).includes("already")) {
+              throw error;
+            }
+
+            await callBitrix("userfieldtype.update", {
+              USER_TYPE_ID: FIELD_TYPE_ID,
+              HANDLER: handlerUrl,
+              TITLE: "Зависимые поля",
+              DESCRIPTION: "Выбор адреса объекта с зависимыми полями",
+              OPTIONS: { height: 470 },
+            });
+          });
+
+          writeStatus("Шаг 2", "Создаем поле сделки...");
+          const appInfo = await callBitrix("app.info", {});
+          const appId = appInfo.ID || appInfo.ID_APP || appInfo.APP_ID;
+
+          if (!appId) {
+            throw new Error("Не удалось получить ID приложения через app.info.");
+          }
+
+          const fullUserTypeId = `rest_${appId}_${FIELD_TYPE_ID}`;
+          const existingFields = await callBitrix("crm.deal.userfield.list", {});
+          const fieldExists = existingFields.some((field) => field.FIELD_NAME === FULL_FIELD_NAME);
+
+          if (!fieldExists) {
+            await callBitrix("crm.deal.userfield.add", {
+              fields: {
+                FIELD_NAME,
+                USER_TYPE_ID: fullUserTypeId,
+                LABEL: "Данные объекта",
+                MULTIPLE: "N",
+                MANDATORY: "N",
+                SHOW_FILTER: "N",
+                SHOW_IN_LIST: "N",
+                EDIT_IN_LIST: "N",
+                SORT: 5,
+              },
+            });
+          }
+
+          writeStatus("Шаг 3", "Добавляем поле в карточку сделки...");
+          await addFieldToDealCard();
+
+          writeStatus("Готово", "Поле «Данные объекта» добавлено в карточку сделки.");
+          BX24.installFinish();
+        } catch (error) {
+          writeStatus("Ошибка", error.message, true);
+        }
+      });
+
+      function callBitrix(method, params) {
+        return new Promise((resolve, reject) => {
+          BX24.callMethod(method, params, (response) => {
             if (response.error()) {
-              writeStatus("Ошибка", response.error(), true);
+              reject(new Error(response.error()));
               return;
             }
 
-            writeStatus("Готово", "Вкладка «Данные объекта» добавлена в карточку сделки.");
-            BX24.installFinish();
+            resolve(response.data());
+          });
+        });
+      }
+
+      async function addFieldToDealCard() {
+        const categories = [69];
+
+        for (const dealCategoryId of categories) {
+          const config = await callBitrix("crm.deal.details.configuration.get", {
+            scope: "C",
+            extras: { dealCategoryId },
+          });
+          const data = Array.isArray(config) ? config : [];
+          const sectionIndex = data.findIndex((section) => section.name === "dependent_fields_app");
+          const section = {
+            name: "dependent_fields_app",
+            title: "Зависимые поля",
+            type: "section",
+            elements: [{ name: FULL_FIELD_NAME, optionFlags: 1 }],
+          };
+
+          if (sectionIndex >= 0) {
+            data[sectionIndex] = section;
+          } else {
+            data.unshift(section);
           }
-        );
-      });
+
+          await callBitrix("crm.deal.details.configuration.set", {
+            scope: "C",
+            extras: { dealCategoryId },
+            data,
+          });
+        }
+      }
     </script>
   </body>
 </html>
