@@ -152,6 +152,11 @@ h1 {
   min-width: 0;
 }
 
+.full-row,
+.meta-line {
+  grid-column: 1 / -1;
+}
+
 .field span {
   color: var(--muted);
   font-size: 13px;
@@ -173,6 +178,12 @@ input {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
+}
+
+.meta-line {
+  min-height: 28px;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 select:disabled,

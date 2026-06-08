@@ -58,32 +58,41 @@
 
           <label class="field">
             <span>Клиент</span>
-            <select id="client-field" name="client" required>
-              <option value="">Найдите или загрузите клиента</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span>Адрес объекта инфо</span>
-            <select id="address-field" name="address" required disabled>
-              <option value="">Сначала выберите клиента</option>
+            <select id="client-field" name="client">
+              <option value="">Любой клиент</option>
             </select>
           </label>
 
           <label class="field">
             <span>Город</span>
-            <input id="city-field" name="city" type="text" readonly placeholder="Заполнится после выбора адреса">
+            <select id="city-field" name="city">
+              <option value="">Любой город</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Поиск адреса</span>
+            <input id="address-search-field" name="addressSearch" type="search" placeholder="Улица, ТРЦ, объект или часть адреса">
+          </label>
+
+          <label class="field full-row">
+            <span>Адрес объекта инфо</span>
+            <select id="address-field" name="address" required>
+              <option value="">Загрузка адресов...</option>
+            </select>
           </label>
 
           <label class="field">
             <span>Наименование ИП инфо</span>
-            <input id="ip-name-field" name="ipName" type="text" readonly placeholder="Заполнится после выбора адреса">
+            <input id="ip-name-field" name="ipName" type="text" readonly placeholder="Заполнится по выбранному адресу">
           </label>
 
           <label class="field">
             <span>Ответственное лицо ИП инфо</span>
-            <input id="ip-responsible-field" name="ipResponsible" type="text" readonly placeholder="Заполнится после выбора адреса">
+            <input id="ip-responsible-field" name="ipResponsible" type="text" readonly placeholder="Заполнится по выбранному адресу">
           </label>
+
+          <div class="meta-line full-row" id="filter-status">Подбираем варианты</div>
 
           <div class="actions">
             <button type="button" class="button secondary" id="reset-button">Очистить</button>

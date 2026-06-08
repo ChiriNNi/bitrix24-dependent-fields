@@ -13,19 +13,32 @@ const IBLOCK = {
 };
 
 const ADDRESS_PROPS = {
+  cleanAddress: "PROPERTY_839",
   responsible: "PROPERTY_905",
   ipName: "PROPERTY_907",
   company: "PROPERTY_951",
+  companyFallback: "PROPERTY_1243",
   city: "PROPERTY_959",
 };
+
+const MAX_ADDRESS_ROWS = 300;
+const MAX_COMPANY_ROWS = 50;
 
 const state = {
   mode: getMode(),
   dealId: null,
   deal: null,
-  selectedAddress: null,
-  cityItems: [],
   isBitrix: false,
+  cityItems: [],
+  addresses: [],
+  selectedAddress: null,
+  companies: new Map(),
+  filters: {
+    companyId: "",
+    city: "",
+    addressQuery: "",
+  },
+  isApplyingFilters: false,
 };
 
 const elements = {
@@ -38,10 +51,12 @@ const elements = {
   clientSearch: document.querySelector("#client-search-field"),
   searchClient: document.querySelector("#search-client-button"),
   client: document.querySelector("#client-field"),
+  addressSearch: document.querySelector("#address-search-field"),
   address: document.querySelector("#address-field"),
   city: document.querySelector("#city-field"),
   ipName: document.querySelector("#ip-name-field"),
   ipResponsible: document.querySelector("#ip-responsible-field"),
+  filterStatus: document.querySelector("#filter-status"),
   reset: document.querySelector("#reset-button"),
   save: document.querySelector("#save-button"),
   result: document.querySelector("#result-panel"),
@@ -76,6 +91,7 @@ async function init() {
   elements.buttonMode.hidden = true;
   elements.form.hidden = false;
   await loadCityItems();
+  populateCityOptions();
 
   if (state.dealId) {
     elements.dealId.value = state.dealId;
@@ -84,24 +100,41 @@ async function init() {
   }
 
   elements.dealIdWrapper.classList.add("visible");
-  await searchCompanies("");
+  await Promise.all([searchCompanies(""), applyFilters()]);
 }
 
 function bindEvents() {
-  elements.openForm.addEventListener("click", openFullForm);
-  elements.loadDeal.addEventListener("click", () => loadDeal(elements.dealId.value.trim()));
-  elements.searchClient.addEventListener("click", () => searchCompanies(elements.clientSearch.value.trim()));
-  elements.clientSearch.addEventListener("keydown", (event) => {
+  elements.openForm?.addEventListener("click", openFullForm);
+  elements.loadDeal?.addEventListener("click", () => loadDeal(elements.dealId.value.trim()));
+  elements.searchClient?.addEventListener("click", () => searchCompanies(elements.clientSearch.value.trim()));
+  elements.clientSearch?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
       searchCompanies(elements.clientSearch.value.trim());
     }
   });
-  elements.client.addEventListener("change", () => loadAddresses(elements.client.value));
-  elements.address.addEventListener("change", handleAddressChange);
-  elements.reset.addEventListener("click", resetForm);
-  elements.form.addEventListener("submit", handleSubmit);
-  elements.closeResult.addEventListener("click", () => {
+  elements.client?.addEventListener("change", () => {
+    state.filters.companyId = elements.client.value;
+    state.selectedAddress = null;
+    clearDetails();
+    applyFilters();
+  });
+  elements.city?.addEventListener("change", () => {
+    state.filters.city = elements.city.value;
+    state.selectedAddress = null;
+    clearDetails();
+    applyFilters();
+  });
+  elements.addressSearch?.addEventListener("input", debounce(() => {
+    state.filters.addressQuery = elements.addressSearch.value.trim();
+    state.selectedAddress = null;
+    clearDetails();
+    applyFilters();
+  }, 250));
+  elements.address?.addEventListener("change", handleAddressChange);
+  elements.reset?.addEventListener("click", resetForm);
+  elements.form?.addEventListener("submit", handleSubmit);
+  elements.closeResult?.addEventListener("click", () => {
     elements.result.hidden = true;
   });
 }
@@ -238,19 +271,35 @@ async function loadDeal(dealId) {
 
   try {
     setBusy(true);
+    setFilterStatus("Загружаем сделку");
     const deal = await callBitrix("crm.deal.get", { id: dealId });
     state.dealId = String(dealId);
     state.deal = deal;
     elements.status.textContent = `Сделка #${state.dealId}`;
+    elements.dealIdWrapper.classList.remove("visible");
 
-    if (deal.COMPANY_ID && deal.COMPANY_ID !== "0") {
-      const company = await callBitrix("crm.company.get", { id: deal.COMPANY_ID });
-      setClientOptions([{ ID: company.ID, TITLE: company.TITLE }], company.ID);
-      await loadAddresses(company.ID, deal[CRM_FIELD_MAP.address]);
-    } else {
-      await searchCompanies("");
-      resetAddressAndDetails("У сделки не выбран клиент");
+    state.filters.companyId = isFilledId(deal.COMPANY_ID) ? String(deal.COMPANY_ID) : "";
+    state.filters.city = getDealCityName(deal);
+    state.filters.addressQuery = "";
+    elements.addressSearch.value = "";
+
+    await ensureCompanyOption(state.filters.companyId);
+    setSelectValue(elements.client, state.filters.companyId);
+    setSelectValue(elements.city, state.filters.city);
+
+    const addressId = deal[CRM_FIELD_MAP.address] ? String(deal[CRM_FIELD_MAP.address]) : "";
+    if (addressId) {
+      const address = normalizeAddress(await getListElementById(IBLOCK.address, addressId));
+      if (address) {
+        mergeAddressFilters(address);
+        await ensureCompanyOption(state.filters.companyId);
+        setSelectValue(elements.client, state.filters.companyId);
+        setSelectValue(elements.city, state.filters.city);
+      }
     }
+
+    await searchCompanies(elements.clientSearch.value.trim(), { keepCurrent: true });
+    await applyFilters({ selectedAddressId: addressId, includeAddressId: addressId });
   } catch (error) {
     showResult(`Не удалось загрузить сделку: ${error.message}`, true);
   } finally {
@@ -258,7 +307,17 @@ async function loadDeal(dealId) {
   }
 }
 
-async function searchCompanies(query) {
+function getDealCityName(deal) {
+  const cityText = deal[CRM_FIELD_MAP.cityText];
+  if (cityText) {
+    return cityText;
+  }
+
+  const cityItemId = deal[CRM_FIELD_MAP.cityList];
+  return state.cityItems.find((item) => String(item.ID) === String(cityItemId))?.VALUE || "";
+}
+
+async function searchCompanies(query, options = {}) {
   try {
     setBusy(true);
     const companies = await callBitrix("crm.company.list", {
@@ -267,8 +326,9 @@ async function searchCompanies(query) {
       select: ["ID", "TITLE"],
       start: 0,
     });
-    setClientOptions(companies.slice(0, 50));
-    resetAddressAndDetails(companies.length ? "Выберите клиента" : "Клиенты не найдены");
+
+    rememberCompanies(companies);
+    setClientOptions(companies.slice(0, MAX_COMPANY_ROWS), options.keepCurrent ? state.filters.companyId : "");
   } catch (error) {
     showResult(`Не удалось найти клиентов: ${error.message}`, true);
   } finally {
@@ -277,85 +337,273 @@ async function searchCompanies(query) {
 }
 
 function setClientOptions(companies, selectedId = "") {
-  elements.client.replaceChildren(new Option("Выберите клиента", ""));
+  const unique = new Map();
+
+  if (selectedId && state.companies.has(String(selectedId))) {
+    unique.set(String(selectedId), state.companies.get(String(selectedId)));
+  }
 
   for (const company of companies) {
+    if (isFilledId(company?.ID)) {
+      unique.set(String(company.ID), { ID: String(company.ID), TITLE: company.TITLE || `Компания #${company.ID}` });
+    }
+  }
+
+  elements.client.replaceChildren(new Option("Любой клиент", ""));
+  for (const company of unique.values()) {
     elements.client.append(new Option(company.TITLE, company.ID));
   }
 
-  elements.client.value = selectedId || "";
+  setSelectValue(elements.client, selectedId);
 }
 
-async function loadAddresses(companyId, selectedAddressId = "") {
-  resetAddressAndDetails("Загрузка адресов...");
+function rememberCompanies(companies) {
+  for (const company of companies || []) {
+    if (isFilledId(company?.ID)) {
+      state.companies.set(String(company.ID), {
+        ID: String(company.ID),
+        TITLE: company.TITLE || `Компания #${company.ID}`,
+      });
+    }
+  }
+}
 
-  if (!companyId) {
-    resetAddressAndDetails("Сначала выберите клиента");
+async function ensureCompanyOption(companyId) {
+  if (!isFilledId(companyId) || state.companies.has(String(companyId))) {
     return;
   }
 
   try {
+    const company = await callBitrix("crm.company.get", { id: companyId });
+    rememberCompanies([company]);
+  } catch {
+    state.companies.set(String(companyId), { ID: String(companyId), TITLE: `Компания #${companyId}` });
+  }
+}
+
+async function applyFilters(options = {}) {
+  if (state.isApplyingFilters) {
+    return;
+  }
+
+  state.isApplyingFilters = true;
+  try {
     setBusy(true);
-    const response = await callBitrix("lists.element.get", {
-      IBLOCK_TYPE_ID: "lists",
-      IBLOCK_ID: IBLOCK.address,
-      ELEMENT_ORDER: { ID: "DESC" },
-      FILTER: { [ADDRESS_PROPS.company]: companyId },
-      start: 0,
-    });
+    setFilterStatus("Подбираем адреса");
+    const addresses = await loadAddressCandidates(options.includeAddressId);
+    state.addresses = addresses;
 
-    const addresses = response.slice(0, 100);
-    elements.address.disabled = false;
-    elements.address.replaceChildren(new Option(addresses.length ? "Выберите адрес" : "Адреса не найдены", ""));
+    await hydrateCompaniesFromAddresses(addresses);
+    refreshClientOptionsFromAddresses();
+    refreshCityOptionsFromAddresses(addresses);
+    renderAddressOptions(addresses, options.selectedAddressId);
 
-    for (const address of addresses) {
-      elements.address.append(new Option(address.NAME, address.ID));
+    if (options.selectedAddressId && addresses.some((address) => address.id === String(options.selectedAddressId))) {
+      elements.address.value = String(options.selectedAddressId);
+      await handleAddressChange({ syncFilters: false });
+      return;
     }
 
-    if (selectedAddressId && addresses.some((address) => address.ID === String(selectedAddressId))) {
-      elements.address.value = String(selectedAddressId);
-      await handleAddressChange();
-    }
+    setFilterStatus(getFilterStatusText(addresses.length));
   } catch (error) {
-    resetAddressAndDetails("Ошибка загрузки адресов");
+    elements.address.replaceChildren(new Option("Не удалось загрузить адреса", ""));
+    setFilterStatus("Ошибка загрузки адресов");
     showResult(`Не удалось загрузить адреса: ${error.message}`, true);
   } finally {
+    state.isApplyingFilters = false;
     setBusy(false);
   }
 }
 
-async function handleAddressChange() {
+async function loadAddressCandidates(includeAddressId = "") {
+  const filter = {};
+
+  if (state.filters.companyId) {
+    filter[ADDRESS_PROPS.company] = state.filters.companyId;
+  }
+
+  if (state.filters.city) {
+    filter[ADDRESS_PROPS.city] = state.filters.city;
+  }
+
+  let rows = await getAddressRows(filter);
+
+  if (state.filters.city && rows.length === 0) {
+    const fallbackFilter = { ...filter };
+    delete fallbackFilter[ADDRESS_PROPS.city];
+    rows = await getAddressRows(fallbackFilter);
+  }
+
+  const normalizedQuery = normalizeText(state.filters.addressQuery);
+  const normalizedCity = normalizeText(state.filters.city);
+
+  const addresses = rows
+    .map(normalizeAddress)
+    .filter(Boolean)
+    .filter((address) => {
+      const matchesCity = !normalizedCity || normalizeText(address.city) === normalizedCity;
+      const matchesCompany = !state.filters.companyId || address.companyId === String(state.filters.companyId);
+      const matchesQuery =
+        !normalizedQuery ||
+        normalizeText(`${address.name} ${address.cleanAddress}`).includes(normalizedQuery);
+
+      return matchesCity && matchesCompany && matchesQuery;
+    });
+
+  if (includeAddressId && !addresses.some((address) => address.id === String(includeAddressId))) {
+    const includedAddress = await getAddressById(includeAddressId);
+    if (includedAddress) {
+      addresses.unshift(includedAddress);
+    }
+  }
+
+  return addresses;
+}
+
+async function getAddressRows(filter) {
+  return callBitrixAll(
+    "lists.element.get",
+    {
+      IBLOCK_TYPE_ID: "lists",
+      IBLOCK_ID: IBLOCK.address,
+      ELEMENT_ORDER: { ID: "DESC" },
+      FILTER: filter,
+      start: 0,
+    },
+    MAX_ADDRESS_ROWS,
+  );
+}
+
+async function hydrateCompaniesFromAddresses(addresses) {
+  const companyIds = [...new Set(addresses.map((address) => address.companyId).filter(isFilledId))]
+    .filter((companyId) => !state.companies.has(companyId))
+    .slice(0, 25);
+
+  await Promise.all(companyIds.map((companyId) => ensureCompanyOption(companyId)));
+}
+
+function refreshClientOptionsFromAddresses() {
+  const currentOptions = [...elements.client.options]
+    .slice(1)
+    .map((option) => ({ ID: option.value, TITLE: option.textContent }));
+
+  const addressCompanies = [...new Set(state.addresses.map((address) => address.companyId).filter(isFilledId))]
+    .map((companyId) => state.companies.get(companyId) || { ID: companyId, TITLE: `Компания #${companyId}` });
+
+  setClientOptions([...currentOptions, ...addressCompanies], state.filters.companyId);
+}
+
+function refreshCityOptionsFromAddresses(addresses) {
+  const existingCities = state.cityItems.map((item) => item.VALUE).filter(Boolean);
+  const addressCities = addresses.map((address) => address.city).filter(Boolean);
+  populateCityOptions([...existingCities, ...addressCities], state.filters.city);
+}
+
+function populateCityOptions(extraCities = [], selectedCity = state.filters.city) {
+  const cities = [...new Set(extraCities.map((city) => String(city).trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "ru"));
+
+  elements.city.replaceChildren(new Option("Любой город", ""));
+  for (const city of cities) {
+    elements.city.append(new Option(city, city));
+  }
+
+  setSelectValue(elements.city, selectedCity);
+}
+
+function renderAddressOptions(addresses, selectedAddressId = "") {
+  elements.address.disabled = false;
+  elements.address.replaceChildren(new Option(addresses.length ? "Выберите адрес" : "Адреса не найдены", ""));
+
+  for (const address of addresses) {
+    const companyTitle = state.companies.get(address.companyId)?.TITLE;
+    const parts = [address.cleanAddress || address.name, address.city, companyTitle].filter(Boolean);
+    elements.address.append(new Option(parts.join(" · "), address.id));
+  }
+
+  if (selectedAddressId) {
+    setSelectValue(elements.address, selectedAddressId);
+  }
+}
+
+async function handleAddressChange(options = {}) {
   const addressId = elements.address.value;
   state.selectedAddress = null;
-  elements.city.value = "";
-  elements.ipName.value = "";
-  elements.ipResponsible.value = "";
+  clearDetails();
 
   if (!addressId) {
+    setFilterStatus(getFilterStatusText(state.addresses.length));
     return;
   }
 
   try {
     setBusy(true);
-    const address = await getListElementById(IBLOCK.address, addressId);
-    const ipId = getFirstPropertyValue(address, ADDRESS_PROPS.ipName) || state.deal?.[CRM_FIELD_MAP.ipName];
-    const responsibleId =
-      getFirstPropertyValue(address, ADDRESS_PROPS.responsible) || state.deal?.[CRM_FIELD_MAP.ipResponsible];
+    const address = await getAddressById(addressId);
+
+    if (!address) {
+      throw new Error("Адрес не найден.");
+    }
+
+    if (options.syncFilters !== false) {
+      mergeAddressFilters(address);
+      await ensureCompanyOption(state.filters.companyId);
+      refreshClientOptionsFromAddresses();
+      refreshCityOptionsFromAddresses(state.addresses);
+      setSelectValue(elements.client, state.filters.companyId);
+      setSelectValue(elements.city, state.filters.city);
+    }
 
     const [ipName, ipResponsible] = await Promise.all([
-      ipId ? getListElementById(IBLOCK.ipName, ipId) : null,
-      responsibleId ? getListElementById(IBLOCK.ipResponsible, responsibleId) : null,
+      address.ipNameId ? getListElementById(IBLOCK.ipName, address.ipNameId) : null,
+      address.responsibleId ? getListElementById(IBLOCK.ipResponsible, address.responsibleId) : null,
     ]);
 
     state.selectedAddress = { address, ipName, ipResponsible };
-    elements.city.value = getFirstPropertyValue(address, ADDRESS_PROPS.city) || "";
     elements.ipName.value = ipName?.NAME || "";
     elements.ipResponsible.value = ipResponsible?.NAME || "";
+    setFilterStatus("Адрес выбран, связанные поля готовы");
   } catch (error) {
     showResult(`Не удалось прочитать адрес: ${error.message}`, true);
   } finally {
     setBusy(false);
   }
+}
+
+async function getAddressById(addressId) {
+  const cached = state.addresses.find((address) => address.id === String(addressId));
+  if (cached) {
+    return cached;
+  }
+
+  return normalizeAddress(await getListElementById(IBLOCK.address, addressId));
+}
+
+function mergeAddressFilters(address) {
+  if (isFilledId(address.companyId)) {
+    state.filters.companyId = String(address.companyId);
+  }
+
+  if (address.city) {
+    state.filters.city = address.city;
+  }
+}
+
+function normalizeAddress(item) {
+  if (!item) {
+    return null;
+  }
+
+  return {
+    id: String(item.ID),
+    name: item.NAME || "",
+    cleanAddress: getFirstPropertyValue(item, ADDRESS_PROPS.cleanAddress),
+    city: getFirstPropertyValue(item, ADDRESS_PROPS.city),
+    companyId:
+      getFirstPropertyValue(item, ADDRESS_PROPS.company) ||
+      getFirstPropertyValue(item, ADDRESS_PROPS.companyFallback),
+    ipNameId: getFirstPropertyValue(item, ADDRESS_PROPS.ipName),
+    responsibleId: getFirstPropertyValue(item, ADDRESS_PROPS.responsible),
+  };
 }
 
 async function getListElementById(iblockId, elementId) {
@@ -366,11 +614,7 @@ async function getListElementById(iblockId, elementId) {
     start: 0,
   });
 
-  if (!items.length) {
-    return null;
-  }
-
-  return items[0];
+  return items[0] || null;
 }
 
 async function loadCityItems() {
@@ -396,12 +640,13 @@ async function handleSubmit(event) {
   }
 
   const { address, ipName, ipResponsible } = state.selectedAddress;
-  const cityName = getFirstPropertyValue(address, ADDRESS_PROPS.city) || "";
+  const cityName = address.city || state.filters.city || "";
   const cityItem = findCityItem(cityName);
+  const companyId = address.companyId || state.filters.companyId || elements.client.value;
 
   const fields = {
-    COMPANY_ID: elements.client.value,
-    [CRM_FIELD_MAP.address]: address.ID,
+    COMPANY_ID: companyId,
+    [CRM_FIELD_MAP.address]: address.id,
     [CRM_FIELD_MAP.ipName]: ipName?.ID || "",
     [CRM_FIELD_MAP.ipResponsible]: ipResponsible?.ID || "",
     [CRM_FIELD_MAP.cityText]: cityName,
@@ -417,11 +662,9 @@ async function handleSubmit(event) {
       id: state.dealId,
       fields,
     });
-    showResult({ saved: Boolean(result), dealId: state.dealId, fields });
 
-    if (state.isBitrix && window.BX24?.closeApplication) {
-      setTimeout(() => BX24.closeApplication(), 800);
-    }
+    showResult({ saved: Boolean(result), dealId: state.dealId, fields });
+    setFilterStatus("Сохранено в сделку");
   } catch (error) {
     showResult(`Не удалось сохранить сделку: ${error.message}`, true);
   } finally {
@@ -448,33 +691,107 @@ function getFirstPropertyValue(item, propertyName) {
   return Object.values(property)[0] || "";
 }
 
-function resetAddressAndDetails(message = "Сначала выберите клиента") {
-  elements.address.disabled = true;
-  elements.address.replaceChildren(new Option(message, ""));
-  elements.city.value = "";
+function clearDetails() {
   elements.ipName.value = "";
   elements.ipResponsible.value = "";
-  state.selectedAddress = null;
 }
 
 function resetForm() {
-  elements.form.reset();
-  state.deal = null;
+  state.filters.companyId = "";
+  state.filters.city = "";
+  state.filters.addressQuery = "";
   state.selectedAddress = null;
-  resetAddressAndDetails();
+  elements.clientSearch.value = "";
+  elements.addressSearch.value = "";
   elements.result.hidden = true;
+  clearDetails();
+  setSelectValue(elements.client, "");
+  setSelectValue(elements.city, "");
+  applyFilters();
 }
 
 function setBusy(isBusy) {
-  elements.openForm.disabled = isBusy;
-  elements.save.disabled = isBusy;
-  elements.searchClient.disabled = isBusy;
-  elements.loadDeal.disabled = isBusy;
+  for (const element of [
+    elements.openForm,
+    elements.save,
+    elements.searchClient,
+    elements.loadDeal,
+    elements.client,
+    elements.city,
+    elements.addressSearch,
+    elements.address,
+  ]) {
+    if (element) {
+      element.disabled = isBusy;
+    }
+  }
+}
+
+function setFilterStatus(message) {
+  if (elements.filterStatus) {
+    elements.filterStatus.textContent = message;
+  }
+}
+
+function getFilterStatusText(count) {
+  if (!count) {
+    return "По текущим условиям адреса не найдены";
+  }
+
+  return `Найдено адресов: ${count}`;
+}
+
+function setSelectValue(select, value) {
+  const normalizedValue = String(value || "");
+
+  if (normalizedValue && ![...select.options].some((option) => option.value === normalizedValue)) {
+    select.append(new Option(normalizedValue, normalizedValue));
+  }
+
+  select.value = normalizedValue;
+}
+
+function isFilledId(value) {
+  return Boolean(value && String(value) !== "0");
+}
+
+function debounce(callback, delay) {
+  let timeoutId;
+  return (...args) => {
+    window.clearTimeout(timeoutId);
+    timeoutId = window.setTimeout(() => callback(...args), delay);
+  };
 }
 
 async function callBitrix(method, params = {}) {
+  const page = await callBitrixPage(method, params);
+  return page.data;
+}
+
+async function callBitrixAll(method, params = {}, limit = 200) {
   if (state.isBitrix) {
-    return callBitrixSdk(method, params);
+    return callBitrixSdkAll(method, params, limit);
+  }
+
+  const items = [];
+  let next = params.start || 0;
+
+  while (items.length < limit && next !== undefined && next !== null) {
+    const page = await callBitrixPage(method, { ...params, start: next });
+    items.push(...page.data);
+    next = page.next;
+
+    if (next === undefined || next === null) {
+      break;
+    }
+  }
+
+  return items.slice(0, limit);
+}
+
+async function callBitrixPage(method, params = {}) {
+  if (state.isBitrix) {
+    return { data: await callBitrixSdk(method, params), next: null };
   }
 
   const endpoint = `${window.location.origin}/rest/${method}.json`;
@@ -489,7 +806,7 @@ async function callBitrix(method, params = {}) {
     throw new Error(payload.error_description || payload.error || `HTTP ${response.status}`);
   }
 
-  return payload.result || [];
+  return { data: payload.result || [], next: payload.next };
 }
 
 function callBitrixSdk(method, params) {
@@ -502,6 +819,30 @@ function callBitrixSdk(method, params) {
 
       resolve(response.data());
     });
+  });
+}
+
+function callBitrixSdkAll(method, params, limit) {
+  return new Promise((resolve, reject) => {
+    const items = [];
+
+    const handleResponse = (response) => {
+      if (response.error()) {
+        reject(new Error(response.error()));
+        return;
+      }
+
+      items.push(...response.data());
+
+      if (items.length >= limit || typeof response.more !== "function" || !response.more()) {
+        resolve(items.slice(0, limit));
+        return;
+      }
+
+      response.next(handleResponse);
+    };
+
+    BX24.callMethod(method, params, handleResponse);
   });
 }
 
