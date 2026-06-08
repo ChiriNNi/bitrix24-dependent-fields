@@ -76,6 +76,7 @@ body.bitrix-frame .app-shell {
 
 .field-grid {
   grid-template-columns: 1fr;
+  padding-top: 8px;
 }
 
 .summary-list {
