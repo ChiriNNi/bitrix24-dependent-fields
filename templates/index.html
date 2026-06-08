@@ -49,18 +49,14 @@
           </label>
 
           <label class="field">
-            <span>Поиск клиента</span>
-            <div class="inline-control">
-              <input id="client-search-field" name="clientSearch" type="search" placeholder="Название компании">
-              <button type="button" class="button secondary" id="search-client-button">Найти</button>
-            </div>
-          </label>
-
-          <label class="field">
             <span>Клиент</span>
-            <select id="client-field" name="client">
-              <option value="">Любой клиент</option>
-            </select>
+            <div class="lookup" id="client-lookup">
+              <input id="client-combobox-field" type="search" autocomplete="off" placeholder="Начните вводить компанию">
+              <select id="client-field" name="client" class="native-value" tabindex="-1" aria-hidden="true">
+                <option value="">Любой клиент</option>
+              </select>
+              <div class="lookup-menu" id="client-options" hidden></div>
+            </div>
           </label>
 
           <label class="field">
@@ -70,16 +66,15 @@
             </select>
           </label>
 
-          <label class="field">
-            <span>Поиск адреса</span>
-            <input id="address-search-field" name="addressSearch" type="search" placeholder="Улица, ТРЦ, объект или часть адреса">
-          </label>
-
           <label class="field full-row">
             <span>Адрес объекта инфо</span>
-            <select id="address-field" name="address" required>
-              <option value="">Загрузка адресов...</option>
-            </select>
+            <div class="lookup" id="address-lookup">
+              <input id="address-combobox-field" type="search" autocomplete="off" placeholder="Улица, ТРЦ, объект или часть адреса">
+              <select id="address-field" name="address" class="native-value" tabindex="-1" aria-hidden="true">
+                <option value="">Загрузка адресов...</option>
+              </select>
+              <div class="lookup-menu" id="address-options" hidden></div>
+            </div>
           </label>
 
           <label class="field">

@@ -48,10 +48,11 @@ const elements = {
   dealIdWrapper: document.querySelector("#deal-id-wrapper"),
   dealId: document.querySelector("#deal-id-field"),
   loadDeal: document.querySelector("#load-deal-button"),
-  clientSearch: document.querySelector("#client-search-field"),
-  searchClient: document.querySelector("#search-client-button"),
+  clientCombo: document.querySelector("#client-combobox-field"),
+  clientDropdown: document.querySelector("#client-options"),
   client: document.querySelector("#client-field"),
-  addressSearch: document.querySelector("#address-search-field"),
+  addressCombo: document.querySelector("#address-combobox-field"),
+  addressDropdown: document.querySelector("#address-options"),
   address: document.querySelector("#address-field"),
   city: document.querySelector("#city-field"),
   ipName: document.querySelector("#ip-name-field"),
@@ -106,13 +107,10 @@ async function init() {
 function bindEvents() {
   elements.openForm?.addEventListener("click", openFullForm);
   elements.loadDeal?.addEventListener("click", () => loadDeal(elements.dealId.value.trim()));
-  elements.searchClient?.addEventListener("click", () => searchCompanies(elements.clientSearch.value.trim()));
-  elements.clientSearch?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      searchCompanies(elements.clientSearch.value.trim());
-    }
-  });
+  elements.clientCombo?.addEventListener("input", debounce(handleClientLookupInput, 250));
+  elements.clientCombo?.addEventListener("focus", () => showLookup(elements.clientDropdown));
+  elements.clientCombo?.addEventListener("click", () => showLookup(elements.clientDropdown));
+  elements.clientDropdown?.addEventListener("click", handleClientOptionClick);
   elements.client?.addEventListener("change", () => {
     state.filters.companyId = elements.client.value;
     state.selectedAddress = null;
@@ -125,18 +123,85 @@ function bindEvents() {
     clearDetails();
     applyFilters();
   });
-  elements.addressSearch?.addEventListener("input", debounce(() => {
-    state.filters.addressQuery = elements.addressSearch.value.trim();
+  elements.addressCombo?.addEventListener("input", debounce(() => {
+    state.filters.addressQuery = elements.addressCombo.value.trim();
     state.selectedAddress = null;
     clearDetails();
     applyFilters();
   }, 250));
+  elements.addressCombo?.addEventListener("focus", () => showLookup(elements.addressDropdown));
+  elements.addressCombo?.addEventListener("click", () => showLookup(elements.addressDropdown));
+  elements.addressDropdown?.addEventListener("click", handleAddressOptionClick);
   elements.address?.addEventListener("change", handleAddressChange);
   elements.reset?.addEventListener("click", resetForm);
   elements.form?.addEventListener("submit", handleSubmit);
   elements.closeResult?.addEventListener("click", () => {
     elements.result.hidden = true;
   });
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest(".lookup")) {
+      hideLookups();
+    }
+  });
+}
+
+async function handleClientLookupInput() {
+  const query = elements.clientCombo.value.trim();
+
+  if (!query) {
+    state.filters.companyId = "";
+    elements.client.value = "";
+    state.selectedAddress = null;
+    clearDetails();
+    await Promise.all([searchCompanies("", { showDropdown: true }), applyFilters()]);
+    return;
+  }
+
+  if (state.filters.companyId) {
+    const selectedTitle = state.companies.get(String(state.filters.companyId))?.TITLE || "";
+    if (normalizeText(query) !== normalizeText(selectedTitle)) {
+      state.filters.companyId = "";
+      elements.client.value = "";
+      state.selectedAddress = null;
+      clearDetails();
+      applyFilters();
+    }
+  }
+
+  await searchCompanies(query, { showDropdown: true });
+}
+
+function handleClientOptionClick(event) {
+  const option = event.target.closest("[data-client-id]");
+  if (!option) {
+    return;
+  }
+
+  const companyId = option.dataset.clientId;
+  const companyTitle = option.dataset.clientTitle || option.textContent.trim();
+  selectClient(companyId, companyTitle);
+}
+
+function selectClient(companyId, companyTitle = "") {
+  state.filters.companyId = String(companyId || "");
+  elements.client.value = state.filters.companyId;
+  elements.clientCombo.value = companyTitle || state.companies.get(state.filters.companyId)?.TITLE || "";
+  state.selectedAddress = null;
+  clearDetails();
+  hideLookup(elements.clientDropdown);
+  applyFilters();
+}
+
+function handleAddressOptionClick(event) {
+  const option = event.target.closest("[data-address-id]");
+  if (!option) {
+    return;
+  }
+
+  elements.address.value = option.dataset.addressId;
+  elements.addressCombo.value = option.dataset.addressTitle || option.textContent.trim();
+  hideLookup(elements.addressDropdown);
+  handleAddressChange();
 }
 
 async function initBitrixContext() {
@@ -281,10 +346,11 @@ async function loadDeal(dealId) {
     state.filters.companyId = isFilledId(deal.COMPANY_ID) ? String(deal.COMPANY_ID) : "";
     state.filters.city = getDealCityName(deal);
     state.filters.addressQuery = "";
-    elements.addressSearch.value = "";
+    elements.addressCombo.value = "";
 
     await ensureCompanyOption(state.filters.companyId);
     setSelectValue(elements.client, state.filters.companyId);
+    syncClientCombo();
     setSelectValue(elements.city, state.filters.city);
 
     const addressId = deal[CRM_FIELD_MAP.address] ? String(deal[CRM_FIELD_MAP.address]) : "";
@@ -294,11 +360,12 @@ async function loadDeal(dealId) {
         mergeAddressFilters(address);
         await ensureCompanyOption(state.filters.companyId);
         setSelectValue(elements.client, state.filters.companyId);
+        syncClientCombo();
         setSelectValue(elements.city, state.filters.city);
       }
     }
 
-    await searchCompanies(elements.clientSearch.value.trim(), { keepCurrent: true });
+    await searchCompanies(elements.clientCombo.value.trim(), { keepCurrent: true });
     await applyFilters({ selectedAddressId: addressId, includeAddressId: addressId });
   } catch (error) {
     showResult(`Не удалось загрузить сделку: ${error.message}`, true);
@@ -329,6 +396,11 @@ async function searchCompanies(query, options = {}) {
 
     rememberCompanies(companies);
     setClientOptions(companies.slice(0, MAX_COMPANY_ROWS), options.keepCurrent ? state.filters.companyId : "");
+    if (options.showDropdown) {
+      elements.clientCombo.value = query;
+      renderClientLookupOptions(companies.slice(0, MAX_COMPANY_ROWS));
+      showLookup(elements.clientDropdown);
+    }
   } catch (error) {
     showResult(`Не удалось найти клиентов: ${error.message}`, true);
   } finally {
@@ -355,6 +427,44 @@ function setClientOptions(companies, selectedId = "") {
   }
 
   setSelectValue(elements.client, selectedId);
+  syncClientCombo();
+  renderClientLookupOptions([...unique.values()]);
+}
+
+function renderClientLookupOptions(companies) {
+  const items = (companies || []).filter((company) => isFilledId(company?.ID));
+
+  if (!items.length) {
+    elements.clientDropdown.replaceChildren(createLookupEmpty("Клиенты не найдены"));
+    return;
+  }
+
+  elements.clientDropdown.replaceChildren(
+    ...items.map((company) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "lookup-option";
+      item.dataset.clientId = company.ID;
+      item.dataset.clientTitle = company.TITLE || `Компания #${company.ID}`;
+      item.innerHTML = `
+        <strong>${escapeHtml(company.TITLE || `Компания #${company.ID}`)}</strong>
+        <span>Компания</span>
+      `;
+      return item;
+    }),
+  );
+}
+
+function syncClientCombo() {
+  if (!elements.clientCombo) {
+    return;
+  }
+
+  const companyTitle =
+    state.filters.companyId && state.companies.has(String(state.filters.companyId))
+      ? state.companies.get(String(state.filters.companyId)).TITLE
+      : "";
+  elements.clientCombo.value = companyTitle;
 }
 
 function rememberCompanies(companies) {
@@ -567,7 +677,44 @@ function renderAddressOptions(addresses, selectedAddressId = "") {
 
   if (selectedAddressId) {
     setSelectValue(elements.address, selectedAddressId);
+    syncAddressCombo(addresses.find((address) => address.id === String(selectedAddressId)));
+  } else {
+    elements.addressCombo.value = state.filters.addressQuery;
   }
+
+  renderAddressLookupOptions(addresses);
+}
+
+function renderAddressLookupOptions(addresses) {
+  if (!addresses.length) {
+    elements.addressDropdown.replaceChildren(createLookupEmpty("Адреса не найдены"));
+    return;
+  }
+
+  elements.addressDropdown.replaceChildren(
+    ...addresses.map((address) => {
+      const companyTitle = state.companies.get(address.companyId)?.TITLE || "";
+      const title = address.cleanAddress || address.name || `Адрес #${address.id}`;
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "lookup-option";
+      item.dataset.addressId = address.id;
+      item.dataset.addressTitle = title;
+      item.innerHTML = `
+        <strong>${escapeHtml(title)}</strong>
+        <span>${escapeHtml([address.city, companyTitle].filter(Boolean).join(" · "))}</span>
+      `;
+      return item;
+    }),
+  );
+}
+
+function syncAddressCombo(address) {
+  if (!elements.addressCombo) {
+    return;
+  }
+
+  elements.addressCombo.value = address ? address.cleanAddress || address.name || "" : "";
 }
 
 async function handleAddressChange(options = {}) {
@@ -594,6 +741,7 @@ async function handleAddressChange(options = {}) {
       refreshClientOptionsFromAddresses();
       refreshCityOptionsFromAddresses(state.addresses);
       setSelectValue(elements.client, state.filters.companyId);
+      syncClientCombo();
       setSelectValue(elements.city, state.filters.city);
     }
 
@@ -603,6 +751,7 @@ async function handleAddressChange(options = {}) {
     ]);
 
     state.selectedAddress = { address, ipName, ipResponsible };
+    syncAddressCombo(address);
     elements.ipName.value = ipName?.NAME || "";
     elements.ipResponsible.value = ipResponsible?.NAME || "";
     setFilterStatus("Адрес выбран, связанные поля готовы");
@@ -745,12 +894,13 @@ function resetForm() {
   state.filters.city = "";
   state.filters.addressQuery = "";
   state.selectedAddress = null;
-  elements.clientSearch.value = "";
-  elements.addressSearch.value = "";
+  elements.clientCombo.value = "";
+  elements.addressCombo.value = "";
   elements.result.hidden = true;
   clearDetails();
   setSelectValue(elements.client, "");
   setSelectValue(elements.city, "");
+  hideLookups();
   applyFilters();
 }
 
@@ -758,12 +908,8 @@ function setBusy(isBusy) {
   for (const element of [
     elements.openForm,
     elements.save,
-    elements.searchClient,
     elements.loadDeal,
-    elements.client,
     elements.city,
-    elements.addressSearch,
-    elements.address,
   ]) {
     if (element) {
       element.disabled = isBusy;
@@ -775,6 +921,39 @@ function setFilterStatus(message) {
   if (elements.filterStatus) {
     elements.filterStatus.textContent = message;
   }
+}
+
+function createLookupEmpty(message) {
+  const item = document.createElement("div");
+  item.className = "lookup-empty";
+  item.textContent = message;
+  return item;
+}
+
+function showLookup(menu) {
+  if (menu && menu.childElementCount) {
+    menu.hidden = false;
+  }
+}
+
+function hideLookup(menu) {
+  if (menu) {
+    menu.hidden = true;
+  }
+}
+
+function hideLookups() {
+  hideLookup(elements.clientDropdown);
+  hideLookup(elements.addressDropdown);
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 function getFilterStatusText(count) {
