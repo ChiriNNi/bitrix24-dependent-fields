@@ -14,14 +14,36 @@
             <p class="eyebrow">CRM-приложение</p>
             <h1 id="app-title">Данные объекта</h1>
           </div>
-          <span class="status" id="connection-status">Демо-режим</span>
+          <span class="status" id="connection-status">Загрузка</span>
         </div>
 
-        <form id="dependent-fields-form" class="field-grid">
+        <section class="button-mode" id="button-mode" hidden>
+          <div class="summary-list">
+            <div>
+              <span>Адрес</span>
+              <strong id="summary-address">не заполнено</strong>
+            </div>
+            <div>
+              <span>Город</span>
+              <strong id="summary-city">не заполнено</strong>
+            </div>
+            <div>
+              <span>ИП</span>
+              <strong id="summary-ip">не заполнено</strong>
+            </div>
+            <div>
+              <span>Ответственное лицо</span>
+              <strong id="summary-responsible">не заполнено</strong>
+            </div>
+          </div>
+          <button type="button" class="button primary full-width" id="open-form-button">Открыть форму</button>
+        </section>
+
+        <form id="dependent-fields-form" class="field-grid" hidden>
           <label class="field deal-field" id="deal-id-wrapper">
             <span>ID сделки</span>
             <div class="inline-control">
-              <input id="deal-id-field" name="dealId" type="number" inputmode="numeric" placeholder="Например 721653">
+              <input id="deal-id-field" name="dealId" type="number" inputmode="numeric" placeholder="Например 721747">
               <button type="button" class="button secondary" id="load-deal-button">Загрузить</button>
             </div>
           </label>

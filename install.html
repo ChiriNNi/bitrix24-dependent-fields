@@ -50,7 +50,7 @@
             HANDLER: handlerUrl,
             TITLE: "Зависимые поля",
             DESCRIPTION: "Выбор адреса объекта с зависимыми полями",
-            OPTIONS: { height: 470 },
+            OPTIONS: { height: 260 },
           }).catch(async (error) => {
             if (!String(error.message).includes("already")) {
               throw error;
@@ -61,7 +61,7 @@
               HANDLER: handlerUrl,
               TITLE: "Зависимые поля",
               DESCRIPTION: "Выбор адреса объекта с зависимыми полями",
-              OPTIONS: { height: 470 },
+              OPTIONS: { height: 260 },
             });
           });
 
@@ -117,7 +117,7 @@
       }
 
       async function addFieldToDealCard() {
-        const categories = [69];
+        const categories = [75];
 
         for (const dealCategoryId of categories) {
           const config = await callBitrix("crm.deal.details.configuration.get", {

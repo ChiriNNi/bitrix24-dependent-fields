@@ -5,9 +5,16 @@ module.exports = async function handler(request, response) {
   const requestData = await readRequestData(request);
   const placementOptions = parsePlacementOptions(requestData.PLACEMENT_OPTIONS);
   const html = fs.readFileSync(path.join(process.cwd(), "index.html"), "utf8");
+  const query = new URL(request.url || "/", "https://local.app").searchParams;
+  const mode = requestData.mode || query.get("mode") || "button";
+  const dealId = requestData.dealId || query.get("dealId") || placementOptions.ENTITY_VALUE_ID || placementOptions.ID;
+  const options = { ...placementOptions, ENTITY_VALUE_ID: dealId };
   const injected = html.replace(
     "</head>",
-    `<script>window.BITRIX_PLACEMENT_OPTIONS = ${JSON.stringify(placementOptions)};</script></head>`
+    `<script>window.BITRIX_PLACEMENT_OPTIONS = ${JSON.stringify(options)};</script></head>`
+  ).replace(
+    '<script src="/app.js"></script>',
+    `<script>history.replaceState(null, "", "?mode=${encodeURIComponent(mode)}${dealId ? `&dealId=${encodeURIComponent(dealId)}` : ""}");</script><script src="/app.js"></script>`
   );
 
   setFrameHeaders(response);

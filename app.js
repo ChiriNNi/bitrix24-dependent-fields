@@ -13,16 +13,14 @@ const IBLOCK = {
 };
 
 const ADDRESS_PROPS = {
-  cleanAddress: "PROPERTY_839",
   responsible: "PROPERTY_905",
   ipName: "PROPERTY_907",
   company: "PROPERTY_951",
-  executor: "PROPERTY_957",
   city: "PROPERTY_959",
-  companyId: "PROPERTY_1243",
 };
 
 const state = {
+  mode: getMode(),
   dealId: null,
   deal: null,
   selectedAddress: null,
@@ -32,6 +30,8 @@ const state = {
 
 const elements = {
   form: document.querySelector("#dependent-fields-form"),
+  buttonMode: document.querySelector("#button-mode"),
+  openForm: document.querySelector("#open-form-button"),
   dealIdWrapper: document.querySelector("#deal-id-wrapper"),
   dealId: document.querySelector("#deal-id-field"),
   loadDeal: document.querySelector("#load-deal-button"),
@@ -48,6 +48,10 @@ const elements = {
   resultOutput: document.querySelector("#result-output"),
   closeResult: document.querySelector("#close-result-button"),
   status: document.querySelector("#connection-status"),
+  summaryAddress: document.querySelector("#summary-address"),
+  summaryCity: document.querySelector("#summary-city"),
+  summaryIp: document.querySelector("#summary-ip"),
+  summaryResponsible: document.querySelector("#summary-responsible"),
 };
 
 init();
@@ -55,6 +59,18 @@ init();
 async function init() {
   bindEvents();
   await initBitrixContext();
+
+  if (state.mode === "button") {
+    elements.buttonMode.hidden = false;
+    elements.form.hidden = true;
+    if (state.dealId) {
+      await loadDealSummary(state.dealId);
+    }
+    return;
+  }
+
+  elements.buttonMode.hidden = true;
+  elements.form.hidden = false;
   await loadCityItems();
 
   if (state.dealId) {
@@ -68,6 +84,7 @@ async function init() {
 }
 
 function bindEvents() {
+  elements.openForm.addEventListener("click", openFullForm);
   elements.loadDeal.addEventListener("click", () => loadDeal(elements.dealId.value.trim()));
   elements.searchClient.addEventListener("click", () => searchCompanies(elements.clientSearch.value.trim()));
   elements.clientSearch.addEventListener("keydown", (event) => {
@@ -102,14 +119,17 @@ async function initBitrixContext() {
     }
 
     await new Promise((resolve) => BX24.init(resolve));
-    const placementInfo = BX24.placement.info();
-    state.dealId = getDealIdFromPlacement(placementInfo);
+    state.dealId = getDealIdFromPlacement(BX24.placement.info());
     elements.status.textContent = state.dealId ? `Сделка #${state.dealId}` : "Bitrix24";
   } catch (error) {
     elements.status.textContent = "Ошибка Bitrix24";
     elements.status.classList.add("error");
     showResult(error.message, true);
   }
+}
+
+function getMode() {
+  return new URLSearchParams(window.location.search).get("mode") || "button";
 }
 
 function isBitrixPlacement() {
@@ -130,6 +150,7 @@ function getDealIdFromPlacement(placementInfo) {
     window.BITRIX_PLACEMENT_OPTIONS?.ID ||
     window.BITRIX_PLACEMENT_OPTIONS?.ENTITY_VALUE_ID ||
     window.BITRIX_PLACEMENT_OPTIONS?.ENTITY_DATA?.entityId ||
+    window.BITRIX_PLACEMENT_OPTIONS?.VALUE_ID ||
     null
   );
 }
@@ -147,6 +168,53 @@ function loadBitrixSdk() {
     script.onerror = () => reject(new Error("Не удалось загрузить SDK Bitrix24."));
     document.head.append(script);
   });
+}
+
+async function loadDealSummary(dealId) {
+  try {
+    setBusy(true);
+    const deal = await callBitrix("crm.deal.get", { id: dealId });
+    state.deal = deal;
+    await fillSummaryFromDeal(deal);
+  } catch (error) {
+    showResult(`Не удалось загрузить сделку: ${error.message}`, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function fillSummaryFromDeal(deal) {
+  elements.summaryCity.textContent = deal[CRM_FIELD_MAP.cityText] || "не заполнено";
+
+  const [address, ipName, ipResponsible] = await Promise.all([
+    deal[CRM_FIELD_MAP.address] ? getListElementById(IBLOCK.address, deal[CRM_FIELD_MAP.address]) : null,
+    deal[CRM_FIELD_MAP.ipName] ? getListElementById(IBLOCK.ipName, deal[CRM_FIELD_MAP.ipName]) : null,
+    deal[CRM_FIELD_MAP.ipResponsible]
+      ? getListElementById(IBLOCK.ipResponsible, deal[CRM_FIELD_MAP.ipResponsible])
+      : null,
+  ]);
+
+  elements.summaryAddress.textContent = address?.NAME || "не заполнено";
+  elements.summaryIp.textContent = ipName?.NAME || "не заполнено";
+  elements.summaryResponsible.textContent = ipResponsible?.NAME || "не заполнено";
+}
+
+function openFullForm() {
+  if (!state.dealId) {
+    showResult("Не удалось определить ID сделки.", true);
+    return;
+  }
+
+  const url = `${window.location.origin}/api/app?mode=form&dealId=${encodeURIComponent(state.dealId)}`;
+
+  if (state.isBitrix && window.BX24?.openApplication) {
+    BX24.openApplication({ url, dealId: state.dealId }, () => {
+      loadDealSummary(state.dealId);
+    });
+    return;
+  }
+
+  window.open(url, "_blank", "width=1040,height=760");
 }
 
 async function loadDeal(dealId) {
@@ -286,7 +354,7 @@ async function getListElementById(iblockId, elementId) {
   });
 
   if (!items.length) {
-    throw new Error(`Элемент ${elementId} не найден в инфоблоке ${iblockId}.`);
+    return null;
   }
 
   return items[0];
@@ -337,6 +405,10 @@ async function handleSubmit(event) {
       fields,
     });
     showResult({ saved: Boolean(result), dealId: state.dealId, fields });
+
+    if (state.isBitrix && window.BX24?.closeApplication) {
+      setTimeout(() => BX24.closeApplication(), 800);
+    }
   } catch (error) {
     showResult(`Не удалось сохранить сделку: ${error.message}`, true);
   } finally {
@@ -381,6 +453,7 @@ function resetForm() {
 }
 
 function setBusy(isBusy) {
+  elements.openForm.disabled = isBusy;
   elements.save.disabled = isBusy;
   elements.searchClient.disabled = isBusy;
   elements.loadDeal.disabled = isBusy;
