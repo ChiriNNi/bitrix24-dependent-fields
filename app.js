@@ -60,6 +60,10 @@ async function init() {
   bindEvents();
   await initBitrixContext();
 
+  if (isBitrixPlacement()) {
+    document.body.classList.add("bitrix-frame");
+  }
+
   if (state.mode === "button") {
     elements.buttonMode.hidden = false;
     elements.form.hidden = true;
@@ -129,7 +133,7 @@ async function initBitrixContext() {
 }
 
 function getMode() {
-  return new URLSearchParams(window.location.search).get("mode") || "button";
+  return new URLSearchParams(window.location.search).get("mode") || "form";
 }
 
 function isBitrixPlacement() {
@@ -153,8 +157,15 @@ function getDealIdFromPlacement(placementInfo) {
     window.BITRIX_PLACEMENT_OPTIONS?.ENTITY_VALUE_ID ||
     window.BITRIX_PLACEMENT_OPTIONS?.ENTITY_DATA?.entityId ||
     window.BITRIX_PLACEMENT_OPTIONS?.VALUE_ID ||
+    getDealIdFromText(window.BITRIX_REQUEST_DATA?.REFERER) ||
+    getDealIdFromText(document.referrer) ||
     null
   );
+}
+
+function getDealIdFromText(value) {
+  const match = String(value || "").match(/\/crm\/deal\/details\/(\d+)\//);
+  return match ? match[1] : null;
 }
 
 function loadBitrixSdk() {

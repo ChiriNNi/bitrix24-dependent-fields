@@ -6,12 +6,18 @@ module.exports = async function handler(request, response) {
   const placementOptions = parsePlacementOptions(requestData.PLACEMENT_OPTIONS);
   const html = fs.readFileSync(path.join(process.cwd(), "templates", "index.html"), "utf8");
   const query = new URL(request.url || "/", "https://local.app").searchParams;
-  const mode = requestData.mode || query.get("mode") || "button";
-  const dealId = requestData.dealId || query.get("dealId") || placementOptions.ENTITY_VALUE_ID || placementOptions.ID;
+  const referer = request.headers.referer || request.headers.referrer || "";
+  const mode = requestData.mode || query.get("mode") || "form";
+  const dealId =
+    requestData.dealId ||
+    query.get("dealId") ||
+    placementOptions.ENTITY_VALUE_ID ||
+    placementOptions.ID ||
+    getDealIdFromText(referer);
   const options = { ...placementOptions, ENTITY_VALUE_ID: dealId };
   const injected = html.replace(
     "</head>",
-    `<script>window.BITRIX_REQUEST_DATA = ${JSON.stringify(requestData)}; window.BITRIX_PLACEMENT_OPTIONS = ${JSON.stringify(options)};</script></head>`
+    `<script>window.BITRIX_REQUEST_DATA = ${JSON.stringify({ ...requestData, REFERER: referer })}; window.BITRIX_PLACEMENT_OPTIONS = ${JSON.stringify(options)};</script></head>`
   ).replace(
     '<script src="/app.js"></script>',
     `<script>history.replaceState(null, "", "?mode=${encodeURIComponent(mode)}${dealId ? `&dealId=${encodeURIComponent(dealId)}` : ""}");</script><script src="/app.js"></script>`
@@ -31,6 +37,11 @@ function parsePlacementOptions(value) {
   } catch {
     return {};
   }
+}
+
+function getDealIdFromText(value) {
+  const match = String(value || "").match(/\/crm\/deal\/details\/(\d+)\//);
+  return match ? match[1] : null;
 }
 
 function readRequestData(request) {

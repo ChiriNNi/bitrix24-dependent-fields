@@ -35,6 +35,22 @@ body {
   padding: 24px;
 }
 
+body.bitrix-frame {
+  background: transparent;
+}
+
+body.bitrix-frame .app-shell {
+  min-height: auto;
+  padding: 0;
+}
+
+body.bitrix-frame .panel {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 12px 0 0;
+}
+
 .panel {
   width: min(920px, 100%);
   background: var(--panel);
