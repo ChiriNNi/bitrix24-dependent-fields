@@ -9,6 +9,18 @@
       "destination": "/api/app"
     },
     {
+      "source": "/app",
+      "destination": "/api/app"
+    },
+    {
+      "source": "/app.html",
+      "destination": "/api/app"
+    },
+    {
+      "source": "/install",
+      "destination": "/api/install"
+    },
+    {
       "source": "/install.html",
       "destination": "/api/install"
     }
