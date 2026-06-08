@@ -4,12 +4,8 @@
       "source": "/(.*)",
       "headers": [
         {
-          "key": "X-Frame-Options",
-          "value": "ALLOWALL"
-        },
-        {
           "key": "Content-Security-Policy",
-          "value": "frame-ancestors 'self' https://*.bitrix24.kz https://*.bitrix24.com https://*.bitrix24.ru"
+          "value": "frame-ancestors 'self' https://tootopbrass.bitrix24.kz https://*.bitrix24.kz https://*.bitrix24.com https://*.bitrix24.ru"
         }
       ]
     }

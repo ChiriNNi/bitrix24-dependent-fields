@@ -11,7 +11,7 @@ module.exports = async function handler(request, response) {
   const options = { ...placementOptions, ENTITY_VALUE_ID: dealId };
   const injected = html.replace(
     "</head>",
-    `<script>window.BITRIX_PLACEMENT_OPTIONS = ${JSON.stringify(options)};</script></head>`
+    `<script>window.BITRIX_REQUEST_DATA = ${JSON.stringify(requestData)}; window.BITRIX_PLACEMENT_OPTIONS = ${JSON.stringify(options)};</script></head>`
   ).replace(
     '<script src="/app.js"></script>',
     `<script>history.replaceState(null, "", "?mode=${encodeURIComponent(mode)}${dealId ? `&dealId=${encodeURIComponent(dealId)}` : ""}");</script><script src="/app.js"></script>`
@@ -60,9 +60,8 @@ function readRequestData(request) {
 
 function setFrameHeaders(response) {
   response.setHeader("Content-Type", "text/html; charset=utf-8");
-  response.setHeader("X-Frame-Options", "ALLOWALL");
   response.setHeader(
     "Content-Security-Policy",
-    "frame-ancestors 'self' https://*.bitrix24.kz https://*.bitrix24.com https://*.bitrix24.ru"
+    "frame-ancestors 'self' https://tootopbrass.bitrix24.kz https://*.bitrix24.kz https://*.bitrix24.com https://*.bitrix24.ru"
   );
 }

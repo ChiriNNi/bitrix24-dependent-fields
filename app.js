@@ -138,6 +138,8 @@ function isBitrixPlacement() {
     params.has("DOMAIN") ||
     params.has("PLACEMENT") ||
     params.has("APP_SID") ||
+    Boolean(window.BITRIX_REQUEST_DATA?.DOMAIN) ||
+    Boolean(window.BITRIX_REQUEST_DATA?.AUTH_ID) ||
     Boolean(window.BITRIX_PLACEMENT_OPTIONS)
   );
 }
