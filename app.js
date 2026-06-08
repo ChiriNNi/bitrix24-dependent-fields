@@ -99,10 +99,12 @@ async function init() {
       elements.dealId.value = state.dealId;
     }
     await loadDeal(state.dealId);
+    scheduleFrameResize();
     return;
   }
 
   await Promise.all([searchCompanies(""), applyFilters()]);
+  scheduleFrameResize();
 }
 
 function bindEvents() {
@@ -531,6 +533,7 @@ async function applyFilters(options = {}) {
   } finally {
     state.isApplyingFilters = false;
     setBusy(false);
+    scheduleFrameResize();
   }
 }
 
@@ -760,6 +763,7 @@ async function handleAddressChange(options = {}) {
     showResult(`Не удалось прочитать адрес: ${error.message}`, true);
   } finally {
     setBusy(false);
+    scheduleFrameResize();
   }
 }
 
@@ -863,6 +867,7 @@ async function handleSubmit(event) {
     showResult(`Не удалось сохранить сделку: ${error.message}`, true);
   } finally {
     setBusy(false);
+    scheduleFrameResize();
   }
 }
 
@@ -934,18 +939,21 @@ function createLookupEmpty(message) {
 function showLookup(menu) {
   if (menu && menu.childElementCount) {
     menu.hidden = false;
+    scheduleFrameResize();
   }
 }
 
 function hideLookup(menu) {
   if (menu) {
     menu.hidden = true;
+    scheduleFrameResize();
   }
 }
 
 function hideLookups() {
   hideLookup(elements.clientDropdown);
   hideLookup(elements.addressDropdown);
+  scheduleFrameResize();
 }
 
 function escapeHtml(value) {
@@ -955,6 +963,31 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function scheduleFrameResize() {
+  window.clearTimeout(scheduleFrameResize.timer);
+  scheduleFrameResize.timer = window.setTimeout(resizeBitrixFrame, 80);
+}
+
+function resizeBitrixFrame() {
+  if (!state.isBitrix || !window.BX24) {
+    return;
+  }
+
+  if (typeof BX24.fitWindow === "function") {
+    BX24.fitWindow();
+    return;
+  }
+
+  if (typeof BX24.resizeWindow !== "function") {
+    return;
+  }
+
+  const panelBottom = elements.form?.closest(".panel")?.getBoundingClientRect().bottom || 0;
+  const contentHeight = Math.ceil(Math.max(document.body.scrollHeight, panelBottom));
+  const contentWidth = Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth));
+  BX24.resizeWindow(contentWidth || 620, contentHeight || 320);
 }
 
 function getFilterStatusText(count) {
@@ -1075,4 +1108,5 @@ function showResult(payload, isError = false) {
   elements.status.classList.toggle("error", isError);
   elements.resultOutput.textContent =
     typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+  scheduleFrameResize();
 }
