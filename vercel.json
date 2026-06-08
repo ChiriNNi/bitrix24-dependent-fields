@@ -1,4 +1,10 @@
 {
+  "rewrites": [
+    {
+      "source": "/install.html",
+      "destination": "/api/install"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",

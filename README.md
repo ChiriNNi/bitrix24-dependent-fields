@@ -65,6 +65,8 @@ URL приложения: https://bitrix24-dependent-fields.vercel.app/api/app
 URL установки: https://bitrix24-dependent-fields.vercel.app/api/install
 ```
 
+Старый путь `https://bitrix24-dependent-fields.vercel.app/install.html` также поддерживается и перенаправляется на serverless-обработчик установки.
+
 После установки `install.html`:
 
 1. зарегистрирует пользовательский тип поля `depfields`;
