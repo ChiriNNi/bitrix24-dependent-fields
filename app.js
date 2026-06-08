@@ -390,12 +390,20 @@ async function applyFilters(options = {}) {
   try {
     setBusy(true);
     setFilterStatus("Подбираем адреса");
-    const addresses = await loadAddressCandidates(options.includeAddressId);
+    let addresses = await loadAddressCandidates(options.includeAddressId);
+    let cityContextAddresses = await loadCityContextAddresses(addresses, options.includeAddressId);
+    const cityWasAdjusted = refreshCityOptionsFromAddresses(cityContextAddresses);
+
+    if (cityWasAdjusted) {
+      addresses = await loadAddressCandidates(options.includeAddressId);
+      cityContextAddresses = await loadCityContextAddresses(addresses, options.includeAddressId);
+      refreshCityOptionsFromAddresses(cityContextAddresses);
+    }
+
     state.addresses = addresses;
 
-    await hydrateCompaniesFromAddresses(addresses);
+    await hydrateCompaniesFromAddresses([...addresses, ...cityContextAddresses]);
     refreshClientOptionsFromAddresses();
-    refreshCityOptionsFromAddresses(addresses);
     renderAddressOptions(addresses, options.selectedAddressId);
 
     if (options.selectedAddressId && addresses.some((address) => address.id === String(options.selectedAddressId))) {
@@ -460,6 +468,31 @@ async function loadAddressCandidates(includeAddressId = "") {
   return addresses;
 }
 
+async function loadCityContextAddresses(filteredAddresses, includeAddressId = "") {
+  if (!state.filters.companyId) {
+    return filteredAddresses;
+  }
+
+  if (!state.filters.city && !state.filters.addressQuery) {
+    return filteredAddresses;
+  }
+
+  const rows = await getAddressRows({ [ADDRESS_PROPS.company]: state.filters.companyId });
+  const addresses = rows
+    .map(normalizeAddress)
+    .filter(Boolean)
+    .filter((address) => address.companyId === String(state.filters.companyId));
+
+  if (includeAddressId && !addresses.some((address) => address.id === String(includeAddressId))) {
+    const includedAddress = await getAddressById(includeAddressId);
+    if (includedAddress && includedAddress.companyId === String(state.filters.companyId)) {
+      addresses.unshift(includedAddress);
+    }
+  }
+
+  return addresses;
+}
+
 async function getAddressRows(filter) {
   return callBitrixAll(
     "lists.element.get",
@@ -494,9 +527,20 @@ function refreshClientOptionsFromAddresses() {
 }
 
 function refreshCityOptionsFromAddresses(addresses) {
-  const existingCities = state.cityItems.map((item) => item.VALUE).filter(Boolean);
   const addressCities = addresses.map((address) => address.city).filter(Boolean);
-  populateCityOptions([...existingCities, ...addressCities], state.filters.city);
+  const cities = state.filters.companyId
+    ? addressCities
+    : [...state.cityItems.map((item) => item.VALUE).filter(Boolean), ...addressCities];
+  const citySet = new Set(cities.map(normalizeText));
+  let cityWasAdjusted = false;
+
+  if (state.filters.companyId && state.filters.city && !citySet.has(normalizeText(state.filters.city))) {
+    state.filters.city = "";
+    cityWasAdjusted = true;
+  }
+
+  populateCityOptions(cities, state.filters.city);
+  return cityWasAdjusted;
 }
 
 function populateCityOptions(extraCities = [], selectedCity = state.filters.city) {
