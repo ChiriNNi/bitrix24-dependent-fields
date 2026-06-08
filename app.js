@@ -23,6 +23,8 @@ const ADDRESS_PROPS = {
 
 const MAX_ADDRESS_ROWS = 300;
 const MAX_COMPANY_ROWS = 50;
+const FIELD_TYPE_ID = "depfields";
+const FIELD_HEIGHT = 360;
 
 const state = {
   mode: getMode(),
@@ -75,6 +77,7 @@ init();
 async function init() {
   bindEvents();
   await initBitrixContext();
+  await updateRegisteredFieldHeight();
 
   if (isBitrixPlacement()) {
     document.body.classList.add("bitrix-frame");
@@ -282,6 +285,24 @@ function loadBitrixSdk() {
     script.onerror = () => reject(new Error("Не удалось загрузить SDK Bitrix24."));
     document.head.append(script);
   });
+}
+
+async function updateRegisteredFieldHeight() {
+  if (!state.isBitrix) {
+    return;
+  }
+
+  try {
+    await callBitrix("userfieldtype.update", {
+      USER_TYPE_ID: FIELD_TYPE_ID,
+      HANDLER: `${window.location.origin}/`,
+      TITLE: "Зависимые поля",
+      DESCRIPTION: "Выбор адреса объекта с зависимыми полями",
+      OPTIONS: { height: FIELD_HEIGHT },
+    });
+  } catch {
+    // The app can work even if this context cannot update the registered field type.
+  }
 }
 
 async function loadDealSummary(dealId) {
@@ -985,7 +1006,9 @@ function resizeBitrixFrame() {
   }
 
   const panelBottom = elements.form?.closest(".panel")?.getBoundingClientRect().bottom || 0;
-  const contentHeight = Math.ceil(Math.max(document.body.scrollHeight, panelBottom));
+  const dropdownBottom = [...document.querySelectorAll(".lookup-menu:not([hidden])")]
+    .reduce((bottom, menu) => Math.max(bottom, menu.getBoundingClientRect().bottom), 0);
+  const contentHeight = Math.ceil(Math.max(document.body.scrollHeight, panelBottom, dropdownBottom));
   const contentWidth = Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth));
   BX24.resizeWindow(contentWidth || 620, contentHeight || 320);
 }

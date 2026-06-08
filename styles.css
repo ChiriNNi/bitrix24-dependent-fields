@@ -48,7 +48,7 @@ body.bitrix-frame .app-shell {
   border: 0;
   border-radius: 0;
   box-shadow: none;
-  padding: 14px 16px 16px;
+  padding: 0 16px 12px;
 }
 
 .install-panel {
@@ -57,60 +57,6 @@ body.bitrix-frame .app-shell {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 22px;
-}
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 14px;
-  padding-bottom: 12px;
-}
-
-.section-title-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-h1 {
-  margin: 0;
-  color: #566473;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0;
-  line-height: 1.2;
-  text-transform: uppercase;
-}
-
-.section-pencil {
-  position: relative;
-  width: 13px;
-  height: 13px;
-  opacity: 0.55;
-}
-
-.section-pencil::before {
-  position: absolute;
-  top: 6px;
-  left: 2px;
-  width: 10px;
-  height: 3px;
-  border-radius: 2px;
-  background: #8f9aa6;
-  content: "";
-  transform: rotate(-38deg);
-}
-
-.section-edit {
-  margin-left: auto;
-  color: #9aa3ad;
-  font-size: 10px;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
 }
 
 .status {
@@ -360,7 +306,7 @@ pre {
 
 @media (max-width: 720px) {
   .panel {
-    padding: 12px;
+    padding: 0 12px 12px;
   }
 
   .actions {
