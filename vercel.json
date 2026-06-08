@@ -1,6 +1,14 @@
 {
   "rewrites": [
     {
+      "source": "/",
+      "destination": "/api/app"
+    },
+    {
+      "source": "/index.html",
+      "destination": "/api/app"
+    },
+    {
       "source": "/install.html",
       "destination": "/api/install"
     }
