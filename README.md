@@ -65,7 +65,7 @@ URL приложения: https://bitrix24-dependent-fields.vercel.app/api/app
 URL установки: https://bitrix24-dependent-fields.vercel.app/api/install
 ```
 
-Старый путь `https://bitrix24-dependent-fields.vercel.app/install.html` также поддерживается и перенаправляется на serverless-обработчик установки.
+Старые пути `https://bitrix24-dependent-fields.vercel.app/`, `https://bitrix24-dependent-fields.vercel.app/index.html` и `https://bitrix24-dependent-fields.vercel.app/install.html` также поддерживаются и перенаправляются на serverless-обработчики.
 
 После установки `install.html`:
 
