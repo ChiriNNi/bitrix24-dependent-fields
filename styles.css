@@ -138,22 +138,13 @@ h1 {
   width: 100%;
 }
 
-.deal-field {
-  display: none;
-}
-
-.deal-field.visible {
-  display: grid;
-}
-
 .field {
   display: grid;
   gap: 7px;
   min-width: 0;
 }
 
-.full-row,
-.meta-line {
+.full-row {
   grid-column: 1 / -1;
 }
 
@@ -240,12 +231,6 @@ input {
 
 .lookup-empty {
   padding: 12px 14px;
-}
-
-.meta-line {
-  min-height: 28px;
-  color: var(--muted);
-  font-size: 13px;
 }
 
 select:disabled,

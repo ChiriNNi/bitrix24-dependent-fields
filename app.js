@@ -95,12 +95,13 @@ async function init() {
   populateCityOptions();
 
   if (state.dealId) {
-    elements.dealId.value = state.dealId;
+    if (elements.dealId) {
+      elements.dealId.value = state.dealId;
+    }
     await loadDeal(state.dealId);
     return;
   }
 
-  elements.dealIdWrapper.classList.add("visible");
   await Promise.all([searchCompanies(""), applyFilters()]);
 }
 
@@ -341,7 +342,7 @@ async function loadDeal(dealId) {
     state.dealId = String(dealId);
     state.deal = deal;
     elements.status.textContent = `Сделка #${state.dealId}`;
-    elements.dealIdWrapper.classList.remove("visible");
+    elements.dealIdWrapper?.classList.remove("visible");
 
     state.filters.companyId = isFilledId(deal.COMPANY_ID) ? String(deal.COMPANY_ID) : "";
     state.filters.city = getDealCityName(deal);
