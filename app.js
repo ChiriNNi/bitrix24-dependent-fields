@@ -857,7 +857,7 @@ async function handleSubmit(event) {
       fields,
     });
 
-    showResult({ saved: Boolean(result), dealId: state.dealId, fields });
+    showResult(result ? "Данные успешно сохранены в сделку." : "Bitrix24 не подтвердил сохранение.", !result);
     setFilterStatus("Сохранено в сделку");
   } catch (error) {
     showResult(`Не удалось сохранить сделку: ${error.message}`, true);
