@@ -96,10 +96,10 @@
           writeStatus("Шаг 3", "Добавляем поле в карточку сделки...");
           await addFieldToDealCard();
 
-          writeStatus("Шаг 4", "Добавляем вкладку приложения для веб/мобильной карточки...");
-          await bindDealDetailTab(handlerUrl);
+          writeStatus("Шаг 4", "Добавляем дополнительные входы приложения для веб/мобильной карточки...");
+          await bindDealDetailPlacements(handlerUrl);
 
-          writeStatus("Готово", "Поле «Данные объекта» и вкладка «Зависимые поля» добавлены в карточку сделки.");
+          writeStatus("Готово", "Поле «Данные объекта» и дополнительные входы «Зависимые поля» добавлены в карточку сделки.");
           BX24.installFinish();
         } catch (error) {
           writeStatus("Ошибка", error.message, true);
@@ -150,22 +150,34 @@
         }
       }
 
-      async function bindDealDetailTab(handlerUrl) {
-        const tabHandler = `${handlerUrl}?mode=form&source=deal_tab`;
+      async function bindDealDetailPlacements(handlerUrl) {
+        await bindPlacement({
+          placement: "CRM_DEAL_DETAIL_TAB",
+          handler: `${handlerUrl}?mode=form&source=deal_tab`,
+          title: "Зависимые поля",
+        });
 
+        await bindPlacement({
+          placement: "CRM_DEAL_DETAIL_ACTIVITY",
+          handler: `${handlerUrl}?mode=form&source=deal_activity`,
+          title: "Заполнить зависимые поля",
+        });
+      }
+
+      async function bindPlacement({ placement, handler, title }) {
         await callBitrix("placement.unbind", {
-          PLACEMENT: "CRM_DEAL_DETAIL_TAB",
-          HANDLER: tabHandler,
+          PLACEMENT: placement,
+          HANDLER: handler,
         }).catch(() => {});
 
         await callBitrix("placement.bind", {
-          PLACEMENT: "CRM_DEAL_DETAIL_TAB",
-          HANDLER: tabHandler,
-          TITLE: "Зависимые поля",
+          PLACEMENT: placement,
+          HANDLER: handler,
+          TITLE: title,
           DESCRIPTION: "Выбор адреса объекта с зависимыми полями",
           LANG_ALL: {
             ru: {
-              TITLE: "Зависимые поля",
+              TITLE: title,
               DESCRIPTION: "Выбор адреса объекта с зависимыми полями",
             },
             kz: {
