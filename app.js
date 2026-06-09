@@ -27,6 +27,8 @@ const FIELD_TYPE_ID = "depfields";
 const FIELD_HEIGHT = 360;
 const APP_FIELD_NAME = "UF_CRM_DEP_WIDGET";
 const DRAFT_KIND = "depfields-draft";
+const DRAFT_POLL_INTERVAL = 3000;
+const DRAFT_POLL_LIMIT = 20;
 
 const state = {
   mode: getMode(),
@@ -34,7 +36,10 @@ const state = {
   deal: null,
   isBitrix: false,
   placementOptions: {},
+  appFieldName: APP_FIELD_NAME,
   draftValue: null,
+  draftPollCount: 0,
+  draftPollTimer: null,
   cityItems: [],
   addresses: [],
   selectedAddress: null,
@@ -233,6 +238,7 @@ async function initBitrixContext() {
     await new Promise((resolve) => BX24.init(resolve));
     const placementInfo = BX24.placement.info();
     state.placementOptions = getPlacementOptions(placementInfo);
+    state.appFieldName = state.placementOptions.FIELD_NAME || APP_FIELD_NAME;
     state.dealId = getDealIdFromPlacement(placementInfo);
     state.draftValue = parseDraftValue(state.placementOptions.VALUE);
     elements.status.textContent = state.dealId ? `Сделка #${state.dealId}` : "Bitrix24";
@@ -900,6 +906,7 @@ async function saveDraftForNewDeal() {
     setBusy(true);
     await setPlacementValue(JSON.stringify(draft));
     state.draftValue = draft;
+    startDraftDealPolling();
     showResult("Выбор сохранен. Теперь нажмите основную кнопку «Сохранить» в карточке сделки Bitrix24. После создания сделки данные применятся автоматически.");
     setFilterStatus("Черновик сохранен");
   } catch (error) {
@@ -989,6 +996,66 @@ async function applyDraftIfNeeded() {
   }
 }
 
+function startDraftDealPolling() {
+  stopDraftDealPolling();
+
+  if (!state.isBitrix || !state.draftValue || state.dealId) {
+    return;
+  }
+
+  state.draftPollCount = 0;
+  state.draftPollTimer = window.setInterval(async () => {
+    state.draftPollCount += 1;
+
+    if (state.dealId || state.draftPollCount > DRAFT_POLL_LIMIT) {
+      stopDraftDealPolling();
+      return;
+    }
+
+    try {
+      const deal = await findDealByDraft(state.draftValue);
+      if (!deal) {
+        return;
+      }
+
+      stopDraftDealPolling();
+      state.dealId = String(deal.ID);
+      state.deal = deal;
+      elements.status.textContent = `Сделка #${state.dealId}`;
+      await loadDeal(state.dealId);
+    } catch {
+      // The deal may not exist yet; the next polling tick will try again.
+    }
+  }, DRAFT_POLL_INTERVAL);
+}
+
+function stopDraftDealPolling() {
+  if (state.draftPollTimer) {
+    window.clearInterval(state.draftPollTimer);
+    state.draftPollTimer = null;
+  }
+}
+
+async function findDealByDraft(draft) {
+  const deals = await callBitrix("crm.deal.list", {
+    order: { ID: "DESC" },
+    filter: { CATEGORY_ID: 75 },
+    select: ["ID", "TITLE", state.appFieldName, ...Object.values(CRM_FIELD_MAP), "COMPANY_ID"],
+    start: 0,
+  });
+
+  return deals.find((deal) => draftMatches(parseDraftValue(deal[state.appFieldName]), draft)) || null;
+}
+
+function draftMatches(candidate, expected) {
+  return Boolean(
+    candidate &&
+    expected &&
+    String(candidate.addressId || "") === String(expected.addressId || "") &&
+    String(candidate.savedAt || "") === String(expected.savedAt || ""),
+  );
+}
+
 function parseDraftValue(value) {
   if (!value) {
     return null;
@@ -1006,7 +1073,7 @@ async function clearStoredDraft() {
   try {
     await callBitrix("crm.deal.update", {
       id: state.dealId,
-      fields: { [APP_FIELD_NAME]: "" },
+      fields: { [state.appFieldName]: "" },
     });
   } catch {
     // The real CRM fields are already saved; a stale technical value is harmless.
