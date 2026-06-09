@@ -96,7 +96,10 @@
           writeStatus("Шаг 3", "Добавляем поле в карточку сделки...");
           await addFieldToDealCard();
 
-          writeStatus("Готово", "Поле «Данные объекта» добавлено в карточку сделки.");
+          writeStatus("Шаг 4", "Добавляем вкладку приложения для веб/мобильной карточки...");
+          await bindDealDetailTab(handlerUrl);
+
+          writeStatus("Готово", "Поле «Данные объекта» и вкладка «Зависимые поля» добавлены в карточку сделки.");
           BX24.installFinish();
         } catch (error) {
           writeStatus("Ошибка", error.message, true);
@@ -145,6 +148,36 @@
             data,
           });
         }
+      }
+
+      async function bindDealDetailTab(handlerUrl) {
+        const tabHandler = `${handlerUrl}?mode=form&source=deal_tab`;
+
+        await callBitrix("placement.unbind", {
+          PLACEMENT: "CRM_DEAL_DETAIL_TAB",
+          HANDLER: tabHandler,
+        }).catch(() => {});
+
+        await callBitrix("placement.bind", {
+          PLACEMENT: "CRM_DEAL_DETAIL_TAB",
+          HANDLER: tabHandler,
+          TITLE: "Зависимые поля",
+          DESCRIPTION: "Выбор адреса объекта с зависимыми полями",
+          LANG_ALL: {
+            ru: {
+              TITLE: "Зависимые поля",
+              DESCRIPTION: "Выбор адреса объекта с зависимыми полями",
+            },
+            kz: {
+              TITLE: "Тәуелді өрістер",
+              DESCRIPTION: "Нысан мекенжайын тәуелді өрістермен таңдау",
+            },
+            en: {
+              TITLE: "Dependent fields",
+              DESCRIPTION: "Object address selection with dependent fields",
+            },
+          },
+        });
       }
     </script>
   </body>

@@ -8,6 +8,7 @@ module.exports = async function handler(request, response) {
   const query = new URL(request.url || "/", "https://local.app").searchParams;
   const referer = request.headers.referer || request.headers.referrer || "";
   const mode = requestData.mode || query.get("mode") || "form";
+  const source = requestData.source || query.get("source") || "";
   const dealId =
     requestData.dealId ||
     query.get("dealId") ||
@@ -20,7 +21,7 @@ module.exports = async function handler(request, response) {
     `<script>window.BITRIX_REQUEST_DATA = ${JSON.stringify({ ...requestData, REFERER: referer })}; window.BITRIX_PLACEMENT_OPTIONS = ${JSON.stringify(options)};</script></head>`
   ).replace(
     '<script src="/app.js"></script>',
-    `<script>history.replaceState(null, "", "?mode=${encodeURIComponent(mode)}${dealId ? `&dealId=${encodeURIComponent(dealId)}` : ""}");</script><script src="/app.js"></script>`
+    `<script>history.replaceState(null, "", "?mode=${encodeURIComponent(mode)}${source ? `&source=${encodeURIComponent(source)}` : ""}${dealId ? `&dealId=${encodeURIComponent(dealId)}` : ""}");</script><script src="/app.js"></script>`
   );
 
   setFrameHeaders(response);
