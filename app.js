@@ -27,8 +27,8 @@ const FIELD_TYPE_ID = "depfields";
 const FIELD_HEIGHT = 360;
 const APP_FIELD_NAME = "UF_CRM_DEP_WIDGET";
 const DRAFT_KIND = "depfields-draft";
-const DRAFT_POLL_INTERVAL = 3000;
-const DRAFT_POLL_LIMIT = 20;
+const DRAFT_POLL_DELAYS = [800, 1400, 2200, 3500, 5000, 7000];
+const DRAFT_POLL_JITTER = 450;
 
 const state = {
   mode: getMode(),
@@ -392,6 +392,14 @@ async function loadDeal(dealId) {
     elements.status.textContent = `Сделка #${state.dealId}`;
     elements.dealIdWrapper?.classList.remove("visible");
 
+    const draftEntry = findDraftInDeal(deal);
+    if (draftEntry) {
+      state.appFieldName = draftEntry.fieldName;
+      state.draftValue = draftEntry.draft;
+      await applyDraftIfNeeded();
+      return;
+    }
+
     state.filters.companyId = isFilledId(deal.COMPANY_ID) ? String(deal.COMPANY_ID) : "";
     state.filters.city = getDealCityName(deal);
     state.filters.addressQuery = "";
@@ -401,12 +409,6 @@ async function loadDeal(dealId) {
     setSelectValue(elements.client, state.filters.companyId);
     syncClientCombo();
     setSelectValue(elements.city, state.filters.city);
-
-    const draftEntry = findDraftInDeal(deal);
-    if (draftEntry) {
-      state.appFieldName = draftEntry.fieldName;
-      state.draftValue = draftEntry.draft;
-    }
 
     const addressId = deal[CRM_FIELD_MAP.address] ? String(deal[CRM_FIELD_MAP.address]) : "";
     if (addressId) {
@@ -972,16 +974,28 @@ function buildDealFields({ address, ipName = null, ipResponsible = null }) {
 
 function buildDraftFromSelection() {
   const { address, ipName, ipResponsible } = state.selectedAddress;
+  const fields = buildDealFields({ address, ipName, ipResponsible });
+
   return {
     kind: DRAFT_KIND,
-    version: 1,
+    version: 2,
+    draftId: createDraftId(),
     addressId: address.id,
     companyId: address.companyId || state.filters.companyId || elements.client.value,
     cityName: address.city || state.filters.city || "",
     ipNameId: ipName?.ID || address.ipNameId || "",
     responsibleId: ipResponsible?.ID || address.responsibleId || "",
+    fields,
     savedAt: new Date().toISOString(),
   };
+}
+
+function createDraftId() {
+  if (window.crypto?.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 async function applyDraftIfNeeded() {
@@ -989,32 +1003,13 @@ async function applyDraftIfNeeded() {
     return;
   }
 
-  const currentAddressId = state.deal?.[CRM_FIELD_MAP.address];
-  if (String(currentAddressId || "") === String(state.draftValue.addressId)) {
-    state.draftValue = null;
-    return;
-  }
-
   try {
     setBusy(true);
-    const address = await getAddressById(state.draftValue.addressId);
-    if (!address) {
-      throw new Error("адрес из черновика не найден");
-    }
-
-    elements.address.value = address.id;
-    state.selectedAddress = null;
-    mergeAddressFilters(address);
-    await ensureCompanyOption(state.filters.companyId);
-    setSelectValue(elements.client, state.filters.companyId);
-    syncClientCombo();
-    setSelectValue(elements.city, state.filters.city);
-    await handleAddressChange();
-    const draftSelection = await buildSelectionFromAddress(address);
+    const fields = await buildDealFieldsFromDraft(state.draftValue);
 
     const result = await callBitrix("crm.deal.update", {
       id: state.dealId,
-      fields: buildDealFields(draftSelection),
+      fields,
     });
 
     if (result) {
@@ -1028,6 +1023,37 @@ async function applyDraftIfNeeded() {
     setBusy(false);
     scheduleFrameResize();
   }
+}
+
+async function buildDealFieldsFromDraft(draft) {
+  if (draft?.fields) {
+    return pickDealFields(draft.fields);
+  }
+
+  const address = await getAddressById(draft.addressId);
+  if (!address) {
+    throw new Error("адрес из черновика не найден");
+  }
+
+  elements.address.value = address.id;
+  state.selectedAddress = null;
+  mergeAddressFilters(address);
+  await ensureCompanyOption(state.filters.companyId);
+  setSelectValue(elements.client, state.filters.companyId);
+  syncClientCombo();
+  setSelectValue(elements.city, state.filters.city);
+  await handleAddressChange();
+  const draftSelection = await buildSelectionFromAddress(address);
+  return buildDealFields(draftSelection);
+}
+
+function pickDealFields(fields) {
+  const allowedFields = ["COMPANY_ID", ...Object.values(CRM_FIELD_MAP)];
+  return Object.fromEntries(
+    allowedFields
+      .filter((fieldName) => Object.prototype.hasOwnProperty.call(fields, fieldName))
+      .map((fieldName) => [fieldName, fields[fieldName]]),
+  );
 }
 
 async function buildSelectionFromAddress(address) {
@@ -1054,10 +1080,21 @@ function startDraftDealPolling() {
   }
 
   state.draftPollCount = 0;
-  state.draftPollTimer = window.setInterval(async () => {
+  scheduleNextDraftPoll();
+}
+
+function scheduleNextDraftPoll() {
+  if (state.dealId || state.draftPollCount >= DRAFT_POLL_DELAYS.length) {
+    stopDraftDealPolling();
+    return;
+  }
+
+  const baseDelay = DRAFT_POLL_DELAYS[state.draftPollCount] || DRAFT_POLL_DELAYS[DRAFT_POLL_DELAYS.length - 1];
+  const jitter = Math.floor(Math.random() * DRAFT_POLL_JITTER);
+  state.draftPollTimer = window.setTimeout(async () => {
     state.draftPollCount += 1;
 
-    if (state.dealId || state.draftPollCount > DRAFT_POLL_LIMIT) {
+    if (state.dealId) {
       stopDraftDealPolling();
       return;
     }
@@ -1073,15 +1110,18 @@ function startDraftDealPolling() {
       state.deal = deal;
       elements.status.textContent = `Сделка #${state.dealId}`;
       await loadDeal(state.dealId);
+      return;
     } catch {
       // The deal may not exist yet; the next polling tick will try again.
     }
-  }, DRAFT_POLL_INTERVAL);
+
+    scheduleNextDraftPoll();
+  }, baseDelay + jitter);
 }
 
 function stopDraftDealPolling() {
   if (state.draftPollTimer) {
-    window.clearInterval(state.draftPollTimer);
+    window.clearTimeout(state.draftPollTimer);
     state.draftPollTimer = null;
   }
 }
@@ -1112,6 +1152,10 @@ function findDraftInDeal(deal) {
 }
 
 function draftMatches(candidate, expected) {
+  if (candidate?.draftId && expected?.draftId) {
+    return candidate.draftId === expected.draftId;
+  }
+
   return Boolean(
     candidate &&
     expected &&

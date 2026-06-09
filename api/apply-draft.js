@@ -91,6 +91,10 @@ function findDraftInDeal(deal, appFieldNames) {
 }
 
 async function buildDealFieldsFromDraft(draft, appFieldNames) {
+  if (draft.fields) {
+    return withClearedAppFields(pickDealFields(draft.fields), appFieldNames);
+  }
+
   const address = await getAddressById(draft.addressId);
   const cityName = address.city || draft.cityName || "";
   const cityItem = await getCityItem(cityName);
@@ -106,11 +110,23 @@ async function buildDealFieldsFromDraft(draft, appFieldNames) {
     fields[CRM_FIELD_MAP.cityList] = cityItem.ID;
   }
 
-  for (const fieldName of appFieldNames) {
-    fields[fieldName] = "";
-  }
+  return withClearedAppFields(fields, appFieldNames);
+}
 
-  return fields;
+function pickDealFields(fields) {
+  const allowedFields = ["COMPANY_ID", ...Object.values(CRM_FIELD_MAP)];
+  return Object.fromEntries(
+    allowedFields
+      .filter((fieldName) => Object.prototype.hasOwnProperty.call(fields, fieldName))
+      .map((fieldName) => [fieldName, fields[fieldName]]),
+  );
+}
+
+function withClearedAppFields(fields, appFieldNames) {
+  return {
+    ...fields,
+    ...Object.fromEntries(appFieldNames.map((fieldName) => [fieldName, ""])),
+  };
 }
 
 async function getAddressById(addressId) {
