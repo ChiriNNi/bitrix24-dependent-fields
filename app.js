@@ -943,15 +943,23 @@ async function saveDraftForNewDeal() {
 }
 
 function buildDealFieldsFromSelection() {
+  if (!state.selectedAddress) {
+    throw new Error("Выбранный адрес не найден в форме.");
+  }
+
   const { address, ipName, ipResponsible } = state.selectedAddress;
+  return buildDealFields({ address, ipName, ipResponsible });
+}
+
+function buildDealFields({ address, ipName = null, ipResponsible = null }) {
   const cityName = address.city || state.filters.city || "";
   const cityItem = findCityItem(cityName);
   const companyId = address.companyId || state.filters.companyId || elements.client.value;
   const fields = {
     COMPANY_ID: companyId,
     [CRM_FIELD_MAP.address]: address.id,
-    [CRM_FIELD_MAP.ipName]: ipName?.ID || "",
-    [CRM_FIELD_MAP.ipResponsible]: ipResponsible?.ID || "",
+    [CRM_FIELD_MAP.ipName]: ipName?.ID || address.ipNameId || "",
+    [CRM_FIELD_MAP.ipResponsible]: ipResponsible?.ID || address.responsibleId || "",
     [CRM_FIELD_MAP.cityText]: cityName,
   };
 
@@ -1002,10 +1010,11 @@ async function applyDraftIfNeeded() {
     syncClientCombo();
     setSelectValue(elements.city, state.filters.city);
     await handleAddressChange();
+    const draftSelection = await buildSelectionFromAddress(address);
 
     const result = await callBitrix("crm.deal.update", {
       id: state.dealId,
-      fields: buildDealFieldsFromSelection(),
+      fields: buildDealFields(draftSelection),
     });
 
     if (result) {
@@ -1019,6 +1028,22 @@ async function applyDraftIfNeeded() {
     setBusy(false);
     scheduleFrameResize();
   }
+}
+
+async function buildSelectionFromAddress(address) {
+  const [ipName, ipResponsible] = await Promise.all([
+    address.ipNameId ? getListElementById(IBLOCK.ipName, address.ipNameId) : null,
+    address.responsibleId ? getListElementById(IBLOCK.ipResponsible, address.responsibleId) : null,
+  ]);
+
+  if (!state.selectedAddress || state.selectedAddress.address.id !== address.id) {
+    state.selectedAddress = { address, ipName, ipResponsible };
+    syncAddressCombo(address);
+    elements.ipName.value = ipName?.NAME || "";
+    elements.ipResponsible.value = ipResponsible?.NAME || "";
+  }
+
+  return { address, ipName, ipResponsible };
 }
 
 function startDraftDealPolling() {
