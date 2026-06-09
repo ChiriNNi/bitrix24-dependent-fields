@@ -25,12 +25,16 @@ const MAX_ADDRESS_ROWS = 300;
 const MAX_COMPANY_ROWS = 50;
 const FIELD_TYPE_ID = "depfields";
 const FIELD_HEIGHT = 360;
+const APP_FIELD_NAME = "UF_CRM_DEP_WIDGET";
+const DRAFT_KIND = "depfields-draft";
 
 const state = {
   mode: getMode(),
   dealId: null,
   deal: null,
   isBitrix: false,
+  placementOptions: {},
+  draftValue: null,
   cityItems: [],
   addresses: [],
   selectedAddress: null,
@@ -227,13 +231,25 @@ async function initBitrixContext() {
     }
 
     await new Promise((resolve) => BX24.init(resolve));
-    state.dealId = getDealIdFromPlacement(BX24.placement.info());
+    const placementInfo = BX24.placement.info();
+    state.placementOptions = getPlacementOptions(placementInfo);
+    state.dealId = getDealIdFromPlacement(placementInfo);
+    state.draftValue = parseDraftValue(state.placementOptions.VALUE);
     elements.status.textContent = state.dealId ? `Сделка #${state.dealId}` : "Bitrix24";
   } catch (error) {
     elements.status.textContent = "Ошибка Bitrix24";
     elements.status.classList.add("error");
     showResult(error.message, true);
   }
+}
+
+function getPlacementOptions(placementInfo) {
+  const sdkOptions = typeof BX24.getPlacementOptions === "function" ? BX24.getPlacementOptions() : {};
+  return {
+    ...window.BITRIX_PLACEMENT_OPTIONS,
+    ...sdkOptions,
+    ...placementInfo?.options,
+  };
 }
 
 function getMode() {
@@ -253,18 +269,19 @@ function isBitrixPlacement() {
 }
 
 function getDealIdFromPlacement(placementInfo) {
-  return (
-    placementInfo?.options?.ID ||
-    placementInfo?.options?.ENTITY_VALUE_ID ||
-    placementInfo?.options?.ENTITY_DATA?.entityId ||
-    window.BITRIX_PLACEMENT_OPTIONS?.ID ||
-    window.BITRIX_PLACEMENT_OPTIONS?.ENTITY_VALUE_ID ||
-    window.BITRIX_PLACEMENT_OPTIONS?.ENTITY_DATA?.entityId ||
-    window.BITRIX_PLACEMENT_OPTIONS?.VALUE_ID ||
-    getDealIdFromText(window.BITRIX_REQUEST_DATA?.REFERER) ||
-    getDealIdFromText(document.referrer) ||
-    null
-  );
+  const candidates = [
+    placementInfo?.options?.ID,
+    placementInfo?.options?.ENTITY_VALUE_ID,
+    placementInfo?.options?.ENTITY_DATA?.entityId,
+    window.BITRIX_PLACEMENT_OPTIONS?.ID,
+    window.BITRIX_PLACEMENT_OPTIONS?.ENTITY_VALUE_ID,
+    window.BITRIX_PLACEMENT_OPTIONS?.ENTITY_DATA?.entityId,
+    window.BITRIX_PLACEMENT_OPTIONS?.VALUE_ID,
+    getDealIdFromText(window.BITRIX_REQUEST_DATA?.REFERER),
+    getDealIdFromText(document.referrer),
+  ];
+
+  return candidates.flat().find(isFilledId) || null;
 }
 
 function getDealIdFromText(value) {
@@ -391,6 +408,7 @@ async function loadDeal(dealId) {
 
     await searchCompanies(elements.clientCombo.value.trim(), { keepCurrent: true });
     await applyFilters({ selectedAddressId: addressId, includeAddressId: addressId });
+    await applyDraftIfNeeded();
   } catch (error) {
     showResult(`Не удалось загрузить сделку: ${error.message}`, true);
   } finally {
@@ -848,21 +866,55 @@ async function loadCityItems() {
 async function handleSubmit(event) {
   event.preventDefault();
 
-  if (!state.dealId) {
-    showResult("Сначала загрузите сделку.", true);
-    return;
-  }
-
   if (!state.selectedAddress) {
     showResult("Выберите адрес объекта.", true);
     return;
   }
 
+  if (!state.dealId) {
+    await saveDraftForNewDeal();
+    return;
+  }
+
+  try {
+    setBusy(true);
+    const result = await callBitrix("crm.deal.update", {
+      id: state.dealId,
+      fields: buildDealFieldsFromSelection(),
+    });
+
+    showResult(result ? "Данные успешно сохранены в сделку." : "Bitrix24 не подтвердил сохранение.", !result);
+    setFilterStatus("Сохранено в сделку");
+  } catch (error) {
+    showResult(`Не удалось сохранить сделку: ${error.message}`, true);
+  } finally {
+    setBusy(false);
+    scheduleFrameResize();
+  }
+}
+
+async function saveDraftForNewDeal() {
+  const draft = buildDraftFromSelection();
+
+  try {
+    setBusy(true);
+    await setPlacementValue(JSON.stringify(draft));
+    state.draftValue = draft;
+    showResult("Выбор сохранен. Теперь нажмите основную кнопку «Сохранить» в карточке сделки Bitrix24. После создания сделки данные применятся автоматически.");
+    setFilterStatus("Черновик сохранен");
+  } catch (error) {
+    showResult(`Не удалось сохранить выбор для создаваемой сделки: ${error.message}`, true);
+  } finally {
+    setBusy(false);
+    scheduleFrameResize();
+  }
+}
+
+function buildDealFieldsFromSelection() {
   const { address, ipName, ipResponsible } = state.selectedAddress;
   const cityName = address.city || state.filters.city || "";
   const cityItem = findCityItem(cityName);
   const companyId = address.companyId || state.filters.companyId || elements.client.value;
-
   const fields = {
     COMPANY_ID: companyId,
     [CRM_FIELD_MAP.address]: address.id,
@@ -875,21 +927,107 @@ async function handleSubmit(event) {
     fields[CRM_FIELD_MAP.cityList] = cityItem.ID;
   }
 
+  return fields;
+}
+
+function buildDraftFromSelection() {
+  const { address, ipName, ipResponsible } = state.selectedAddress;
+  return {
+    kind: DRAFT_KIND,
+    version: 1,
+    addressId: address.id,
+    companyId: address.companyId || state.filters.companyId || elements.client.value,
+    cityName: address.city || state.filters.city || "",
+    ipNameId: ipName?.ID || address.ipNameId || "",
+    responsibleId: ipResponsible?.ID || address.responsibleId || "",
+    savedAt: new Date().toISOString(),
+  };
+}
+
+async function applyDraftIfNeeded() {
+  if (!state.dealId || !state.draftValue?.addressId) {
+    return;
+  }
+
+  const currentAddressId = state.deal?.[CRM_FIELD_MAP.address];
+  if (String(currentAddressId || "") === String(state.draftValue.addressId)) {
+    state.draftValue = null;
+    return;
+  }
+
   try {
     setBusy(true);
+    const address = await getAddressById(state.draftValue.addressId);
+    if (!address) {
+      throw new Error("адрес из черновика не найден");
+    }
+
+    elements.address.value = address.id;
+    state.selectedAddress = null;
+    mergeAddressFilters(address);
+    await ensureCompanyOption(state.filters.companyId);
+    setSelectValue(elements.client, state.filters.companyId);
+    syncClientCombo();
+    setSelectValue(elements.city, state.filters.city);
+    await handleAddressChange();
+
     const result = await callBitrix("crm.deal.update", {
       id: state.dealId,
-      fields,
+      fields: buildDealFieldsFromSelection(),
     });
 
-    showResult(result ? "Данные успешно сохранены в сделку." : "Bitrix24 не подтвердил сохранение.", !result);
-    setFilterStatus("Сохранено в сделку");
+    if (result) {
+      await clearStoredDraft();
+      state.draftValue = null;
+      showResult("Данные из черновика применены к созданной сделке.");
+    }
   } catch (error) {
-    showResult(`Не удалось сохранить сделку: ${error.message}`, true);
+    showResult(`Сделка создана, но черновик не удалось применить автоматически: ${error.message}`, true);
   } finally {
     setBusy(false);
     scheduleFrameResize();
   }
+}
+
+function parseDraftValue(value) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const draft = typeof value === "string" ? JSON.parse(value) : value;
+    return draft?.kind === DRAFT_KIND ? draft : null;
+  } catch {
+    return null;
+  }
+}
+
+async function clearStoredDraft() {
+  try {
+    await callBitrix("crm.deal.update", {
+      id: state.dealId,
+      fields: { [APP_FIELD_NAME]: "" },
+    });
+  } catch {
+    // The real CRM fields are already saved; a stale technical value is harmless.
+  }
+}
+
+function setPlacementValue(value) {
+  if (!state.isBitrix || !window.BX24?.placement?.call) {
+    return Promise.reject(new Error("Bitrix24 не разрешил сохранить значение поля до создания сделки."));
+  }
+
+  return new Promise((resolve, reject) => {
+    BX24.placement.call("setValue", value, (response) => {
+      if (response?.error?.()) {
+        reject(new Error(response.error()));
+        return;
+      }
+
+      resolve(response?.data?.());
+    });
+  });
 }
 
 function findCityItem(cityName) {
