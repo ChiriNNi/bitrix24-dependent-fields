@@ -37,6 +37,7 @@ const state = {
   isBitrix: false,
   placementOptions: {},
   appFieldName: APP_FIELD_NAME,
+  appFieldNames: [APP_FIELD_NAME],
   draftValue: null,
   draftPollCount: 0,
   draftPollTimer: null,
@@ -104,6 +105,7 @@ async function init() {
   elements.buttonMode.hidden = true;
   elements.form.hidden = false;
   await loadCityItems();
+  await loadAppFieldNames();
   populateCityOptions();
 
   if (state.dealId) {
@@ -399,6 +401,12 @@ async function loadDeal(dealId) {
     setSelectValue(elements.client, state.filters.companyId);
     syncClientCombo();
     setSelectValue(elements.city, state.filters.city);
+
+    const draftEntry = findDraftInDeal(deal);
+    if (draftEntry) {
+      state.appFieldName = draftEntry.fieldName;
+      state.draftValue = draftEntry.draft;
+    }
 
     const addressId = deal[CRM_FIELD_MAP.address] ? String(deal[CRM_FIELD_MAP.address]) : "";
     if (addressId) {
@@ -869,6 +877,23 @@ async function loadCityItems() {
   }
 }
 
+async function loadAppFieldNames() {
+  try {
+    const fields = await callBitrix("crm.deal.userfield.list", {});
+    const fieldNames = fields
+      .filter((field) => field.USER_TYPE_ID === FIELD_TYPE_ID || field.FIELD_NAME === APP_FIELD_NAME)
+      .map((field) => field.FIELD_NAME)
+      .filter(Boolean);
+
+    state.appFieldNames = [...new Set([state.appFieldName, APP_FIELD_NAME, ...fieldNames])];
+    state.appFieldName = state.appFieldNames.includes(state.appFieldName)
+      ? state.appFieldName
+      : state.appFieldNames[0] || APP_FIELD_NAME;
+  } catch {
+    state.appFieldNames = [...new Set([state.appFieldName, APP_FIELD_NAME])];
+  }
+}
+
 async function handleSubmit(event) {
   event.preventDefault();
 
@@ -1040,11 +1065,25 @@ async function findDealByDraft(draft) {
   const deals = await callBitrix("crm.deal.list", {
     order: { ID: "DESC" },
     filter: { CATEGORY_ID: 75 },
-    select: ["ID", "TITLE", state.appFieldName, ...Object.values(CRM_FIELD_MAP), "COMPANY_ID"],
+    select: ["ID", "TITLE", ...state.appFieldNames, ...Object.values(CRM_FIELD_MAP), "COMPANY_ID"],
     start: 0,
   });
 
-  return deals.find((deal) => draftMatches(parseDraftValue(deal[state.appFieldName]), draft)) || null;
+  return deals.find((deal) => {
+    const entry = findDraftInDeal(deal);
+    return draftMatches(entry?.draft, draft);
+  }) || null;
+}
+
+function findDraftInDeal(deal) {
+  for (const fieldName of state.appFieldNames) {
+    const draft = parseDraftValue(deal?.[fieldName]);
+    if (draft) {
+      return { fieldName, draft };
+    }
+  }
+
+  return null;
 }
 
 function draftMatches(candidate, expected) {
@@ -1071,9 +1110,10 @@ function parseDraftValue(value) {
 
 async function clearStoredDraft() {
   try {
+    const fields = Object.fromEntries(state.appFieldNames.map((fieldName) => [fieldName, ""]));
     await callBitrix("crm.deal.update", {
       id: state.dealId,
-      fields: { [state.appFieldName]: "" },
+      fields,
     });
   } catch {
     // The real CRM fields are already saved; a stale technical value is harmless.
